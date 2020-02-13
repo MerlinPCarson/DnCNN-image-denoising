@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser(description="DnCNN")
 parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
 parser.add_argument("--batchSize", type=int, default=128, help="Training batch size")
 parser.add_argument("--num_of_layers", type=int, default=17, help="Number of total layers")
-parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
 parser.add_argument("--milestone", type=int, default=30, help="When to decay learning rate; should be less than epochs")
 parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
 parser.add_argument("--outf", type=str, default="logs", help='path of log files')
@@ -50,16 +50,17 @@ def main():
     writer = SummaryWriter(opt.outf)
     step = 0
     noiseL_B=[0,55] # ingnored when opt.mode=='S'
+    
     for epoch in range(opt.epochs):
         if epoch < opt.milestone:
-            current_lr = opt.lr
+            lr = opt.lr
         else:
-            current_lr = opt.lr / 10.
+            lr = opt.lr / 10.
         # set learning rate
         for param_group in optimizer.param_groups:
-            param_group["lr"] = current_lr
-        print('learning rate %f' % current_lr)
+            param_group["lr"] = lr
         # train
+        print(f'Starting epoch {epoch+1} with lr={lr}')
         #for i, data in enumerate(loader_train, 0):
         for data in tqdm(loader_train):
             # training step
@@ -107,7 +108,7 @@ def main():
                 out_val = torch.clamp(imgn_val-model(imgn_val), 0., 1.)
                 psnr_val += batch_PSNR(out_val, img_val, 1.)
         psnr_val /= len(dataset_val)
-        print("\n[epoch %d] PSNR_val: %.4f" % (epoch+1, psnr_val))
+        print(f"\nPSNR_val: {psnr_val:.4f}")
         writer.add_scalar('PSNR on validation data', psnr_val, epoch)
         # log the images
         out_train = torch.clamp(imgn_train-model(imgn_train), 0., 1.)
