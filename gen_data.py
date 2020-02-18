@@ -24,6 +24,7 @@ def generate_data(train_path, valid_path, patch_size, stride, scaling_factors):
             patches = get_image_patches(img_scaled, patch_size, stride)
             print(f'  scaling: {scale}, num patches: {patches.shape[0]}')
             for patch_num in range(patches.shape[0]):
+                # chanels first
                 patch = np.einsum('ijk->kij', patches[patch_num,:,:,:].astype(np.float32))
                 h5f.create_dataset(str(num_train), data=patch)
                 num_train += 1
@@ -32,11 +33,12 @@ def generate_data(train_path, valid_path, patch_size, stride, scaling_factors):
 
     print(f'[Data Generation] Creating validation data from {valid_path}')
     num_valid = 0
-    h5f = h5py.File('valid.h5', 'w')
+    h5f = h5py.File('val.h5', 'w')
     for f in sorted(glob(os.path.join(valid_path, '*.png'))):
         print(f'Preprocessing {f}')
         img = cv.imread(f)
-        img = np.array(img[:,:,0].reshape((img.shape[0],img.shape[1],1))/255, dtype=np.float32)
+        # channels first
+        img = np.array(img[:,:,0].reshape((1,img.shape[0],img.shape[1]))/255, dtype=np.float32)
         h5f.create_dataset(str(num_valid), data=img)
         num_valid += 1
     h5f.close()
