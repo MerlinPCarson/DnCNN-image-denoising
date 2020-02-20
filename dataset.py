@@ -23,7 +23,8 @@ def Im2Patch(img, win, stride=1):
     for i in range(win):
         for j in range(win):
             patch = img[:,i:endw-win+i+1:stride,j:endh-win+j+1:stride]
-            Y[:,k,:] = np.array(patch[:]).reshape(endc, TotalPatNum)
+            p_ins = np.array(patch[:]).reshape(endc, TotalPatNum)
+            Y[:,k,:] = p_ins
             k = k + 1
     return Y.reshape([endc, win, win, TotalPatNum])
 

@@ -7,6 +7,7 @@ import torch.optim as optim
 import torchvision.utils as utils
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tensorboardX import SummaryWriter
 from models import DnCNN
 from dataset import prepare_data, Dataset
@@ -14,11 +15,15 @@ from utils import *
 from tqdm import tqdm
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+device_ids = []
+for i in range(torch.cuda.device_count()):
+    device_ids.append(i)
+device_str = ','.join(map(str, device_ids))
+os.environ["CUDA_VISIBLE_DEVICES"] = device_str 
 
 parser = argparse.ArgumentParser(description="DnCNN")
 parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
-parser.add_argument("--batchSize", type=int, default=128, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=512, help="Training batch size")
 parser.add_argument("--num_of_layers", type=int, default=17, help="Number of total layers")
 parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
 parser.add_argument("--milestone", type=int, default=30, help="When to decay learning rate; should be less than epochs")
@@ -29,23 +34,29 @@ parser.add_argument("--noiseL", type=float, default=25, help='noise level; ignor
 parser.add_argument("--val_noiseL", type=float, default=25, help='noise level used on validation set')
 opt = parser.parse_args()
 
+
 def main():
     # Load dataset
     print('Loading dataset ...\n')
     dataset_train = Dataset(train=True)
     dataset_val = Dataset(train=False)
-    loader_train = DataLoader(dataset=dataset_train, num_workers=4, batch_size=opt.batchSize, shuffle=True)
+    loader_train = DataLoader(dataset=dataset_train, num_workers=os.cpu_count(), batch_size=opt.batchSize*len(device_ids), shuffle=True)
     print("# of training samples: %d\n" % int(len(dataset_train)))
+    print("# of validation samples: %d\n" % int(len(dataset_val)))
     # Build model
     net = DnCNN(channels=1, num_of_layers=opt.num_of_layers)
     net.apply(weights_init_kaiming)
     criterion = nn.MSELoss(reduction='sum')
     # Move to GPU
-    device_ids = [0]
+    #device_ids = [0]
     model = nn.DataParallel(net, device_ids=device_ids).cuda()
+    #print(device_ids)
+    #model = nn.parallel.DistributedDataParallel(net, device_ids=device_ids).cuda()
+    #model = nn.parallel.DistributedDataParallel(net).cuda()
     criterion.cuda()
     # Optimizer
     optimizer = optim.Adam(model.parameters(), lr=opt.lr)
+    #scheduler = ReduceLROnPlateau(optimizer, 'min')
     # training
     writer = SummaryWriter(opt.outf)
     step = 0
