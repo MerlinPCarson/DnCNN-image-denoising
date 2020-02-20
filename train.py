@@ -12,6 +12,7 @@ from models import DnCNN
 from dataset import prepare_data, Dataset
 from utils import *
 from tqdm import tqdm
+import h5py
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -29,12 +30,28 @@ parser.add_argument("--noiseL", type=float, default=25, help='noise level; ignor
 parser.add_argument("--val_noiseL", type=float, default=25, help='noise level used on validation set')
 opt = parser.parse_args()
 
+def load_train_data(fileName):
+    with h5py.File(fileName, 'r') as h5f:
+        keys = h5f.keys()
+        num_examples = len(keys)
+        data = np.empty((num_examples, 1, 40, 40), dtype=np.float32)
+        for i, key in enumerate(keys):
+            data[i] = torch.Tensor(h5f[key])
+            if i > 10:
+                break
+
+    return data
+    
 def main():
+    print(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     # Load dataset
     print('Loading dataset ...\n')
+    #train_data = load_train_data('train.h5')
     dataset_train = Dataset(train=True)
     dataset_val = Dataset(train=False)
     loader_train = DataLoader(dataset=dataset_train, num_workers=4, batch_size=opt.batchSize, shuffle=True)
+    #loader_train = torch.utils.data.DataLoader(dataset=train_data, num_workers=4, batch_size=opt.batchSize, shuffle=True) 
+    #print("# of training samples: %d\n" % int(len(train_data)))
     print("# of training samples: %d\n" % int(len(dataset_train)))
     # Build model
     net = DnCNN(channels=1, num_of_layers=opt.num_of_layers)
