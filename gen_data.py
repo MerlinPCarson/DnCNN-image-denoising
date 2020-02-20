@@ -10,9 +10,9 @@ from glob import glob
 
 def generate_data(train_path, valid_path, patch_size, stride, scaling_factors):
     print(f'[Data Generation] Creating training data from {train_path}')
-    num_train = 0
     h5f = h5py.File('train.h5', 'w')
-    num_train = 0
+    train_data = np.empty((0, 1, patch_size, patch_size), dtype=np.float32)
+
     for f in sorted(glob(os.path.join(train_path, '*.png'))):
         print(f'Preprocessing {f}')
         img = cv.imread(f)
@@ -26,25 +26,24 @@ def generate_data(train_path, valid_path, patch_size, stride, scaling_factors):
             for patch_num in range(patches.shape[0]):
                 # chanels first
                 patch = np.einsum('ijk->kij', patches[patch_num,:,:,:].astype(np.float32))
-                h5f.create_dataset(str(num_train), data=patch)
-                num_train += 1
+                train_data = np.vstack((train_data, np.expand_dims(patch, axis=0)))
 
+    h5f.create_dataset('train', data=train_data)
     h5f.close()
 
+    h5f = h5py.File('valid.h5', 'w')
     print(f'[Data Generation] Creating validation data from {valid_path}')
-    num_valid = 0
-    h5f = h5py.File('val.h5', 'w')
-    for f in sorted(glob(os.path.join(valid_path, '*.png'))):
+    for i, f in enumerate(sorted(glob(os.path.join(valid_path, '*.png')))):
         print(f'Preprocessing {f}')
         img = cv.imread(f)
         # channels first
         img = np.array(img[:,:,0].reshape((1,img.shape[0],img.shape[1]))/255, dtype=np.float32)
-        h5f.create_dataset(str(num_valid), data=img)
-        num_valid += 1
+        h5f.create_dataset(str(i), data=img)
+
     h5f.close()
         
-    print(f'Number of training examples {num_train}')    
-    print(f'Number of validation examples {num_valid}')    
+    print(f'Number of training examples {train_data.shape[0]}')    
+    print(f'Number of validation examples {i+1}')    
 
 
     pass
