@@ -8,15 +8,25 @@ from glob import glob
 
 import matplotlib.pyplot as plt
 
+def augment_img(img, aug_type):
+    if aug_type == 'mirror':
+        return np.fliplr(img)
+    if aug_type == 'flip':
+        return np.flipud(img)
+    if aug_type == 'rotL':
+        return np.rot90(img, k=1)
+    if aug_type == 'rotR':
+        return np.rot90(img, k=-1)
 
-def image_augment(img):
+
+def image_augment(img, num_augs):
     # save as channel first
-    data_aug = np.empty((5,img.shape[2], img.shape[0], img.shape[1]))
-    data_aug[0] = np.einsum('ijk->kij', img.astype(np.float32))
-    data_aug[1] = np.einsum('ijk->kij', np.fliplr(img).astype(np.float32))
-    data_aug[2] = np.einsum('ijk->kij', np.flipud(img).astype(np.float32))
-    data_aug[3] = np.einsum('ijk->kij', np.rot90(img, k=1).astype(np.float32))
-    data_aug[4] = np.einsum('ijk->kij', np.rot90(img, k=-1).astype(np.float32))
+    data_aug = np.empty((num_augs+1,img.shape[2], img.shape[0], img.shape[1]))
+    aug_types = np.array(['mirror', 'flip', 'rotL', 'rotR'])
+    np.random.shuffle(aug_types)
+    data_aug[0] = np.einsum('ijk->kij', img.astype(np.float32)) 
+    for i in range(num_augs):
+        data_aug[i] = np.einsum('ijk->kij', augment_img(img, aug_types[i]).astype(np.float32)) 
 
     return data_aug
 
@@ -29,7 +39,7 @@ def generate_data(train_path, valid_path, patch_size, stride, scaling_factors):
     for f in sorted(glob(os.path.join(train_path, '*.png'))):
         print(f'Preprocessing {f}')
         img = cv.imread(f)
-        image_augment(img)
+        #image_augment(img, 2)
         height, width, ch = img.shape
 
         for scale in scaling_factors:
@@ -38,7 +48,7 @@ def generate_data(train_path, valid_path, patch_size, stride, scaling_factors):
             patches = get_image_patches(img_scaled, patch_size, stride)
             #print(f'  scaling: {scale}, num patches: {patches.shape[0]}')
             for patch_num in range(patches.shape[0]):
-                data_aug = image_augment(patches[patch_num])
+                data_aug = image_augment(patches[patch_num], 2)
                 for aug in range(data_aug.shape[0]):
                     h5f.create_dataset(str(num_train), data=data_aug[aug])
                     num_train += 1
