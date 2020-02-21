@@ -23,7 +23,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = device_str
 
 parser = argparse.ArgumentParser(description="DnCNN")
 parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
-parser.add_argument("--batchSize", type=int, default=512, help="Training batch size")
+parser.add_argument("--batchSize", type=int, default=256, help="Training batch size")
 parser.add_argument("--num_of_layers", type=int, default=17, help="Number of total layers")
 parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
 parser.add_argument("--milestone", type=int, default=30, help="When to decay learning rate; should be less than epochs")
@@ -110,6 +110,7 @@ def main():
         model.eval()
         # validate
         psnr_val = 0
+        #1val_loss = 0
         for k in range(len(dataset_val)):
             img_val = torch.unsqueeze(dataset_val[k], 0)
             noise = torch.FloatTensor(img_val.size()).normal_(mean=0, std=opt.val_noiseL/255.)
@@ -117,10 +118,14 @@ def main():
             with torch.no_grad():
                 img_val, imgn_val = Variable(img_val.cuda()), Variable(imgn_val.cuda())
                 out_val = torch.clamp(imgn_val-model(imgn_val), 0., 1.)
+        #        val_loss += criterion(out_train, noise) / (imgn_val.size()[0]*2)
                 psnr_val += batch_PSNR(out_val, img_val, 1.)
         psnr_val /= len(dataset_val)
+        #val_loss /= len(dataset_val)
         print(f"\nPSNR_val: {psnr_val:.4f}")
+        #print(f"\nval_loss: {val_loss:.4f}")
         writer.add_scalar('PSNR on validation data', psnr_val, epoch)
+        #writer.add_scalar('val_loss', val_loss.item(), epoch)
         # log the images
         out_train = torch.clamp(imgn_train-model(imgn_train), 0., 1.)
         Img = utils.make_grid(img_train.data, nrow=8, normalize=True, scale_each=True)
