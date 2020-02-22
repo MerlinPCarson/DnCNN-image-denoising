@@ -44,7 +44,7 @@ def main():
     parser.add_argument('--val_set', type=str, default='val.h5', help='h5 file with validation vectors')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=50, help='number of epochs')
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
     parser.add_argument('--num_layers', type=int, default=17, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
@@ -81,7 +81,6 @@ def main():
     # create model
     model = DnCNN(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
                   kernel_size=args.filter_size, stride=args.stride, num_filters=args.num_filters) 
-    model.apply(weights_init_kaiming)
 
     # move model to available gpus
     model = torch.nn.DataParallel(model, device_ids=device_ids).cuda()
@@ -95,13 +94,17 @@ def main():
 
     # Main training loop
     for epoch in range(args.epochs):
-        print(f'Staring epoch {epoch+1}')
-
+        print(f'Starting epoch {epoch+1}')
+        model.train()
         # iterate through batches of training examples
         epoch_train_loss = 0
         epoch_val_loss = 0
         steps = 0
+
         for data in tqdm(train_loader):
+            model.zero_grad()
+            optimizer.zero_grad()
+
             # generate additive white noise from gaussian distribution
             noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
 
@@ -114,7 +117,7 @@ def main():
 
             # calculate loss
             loss = criterion(preds, noise)/examples.size()[0]
-            epoch_train_loss += loss
+            epoch_train_loss += loss.item()
 
             # backprop
             loss.backward()
