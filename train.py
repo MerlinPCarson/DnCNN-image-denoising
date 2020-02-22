@@ -1,16 +1,17 @@
 import os
 import sys
+import h5py
 import argparse
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-import h5py
 from model import DnCNN
 from utils import weights_init_kaiming
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
+from torchvision.utils import make_grid
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -105,7 +106,7 @@ def main():
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
-    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=1)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=4)
 
     # Main training loop
     best_val_loss = 999
@@ -182,7 +183,14 @@ def main():
         print(f'Training loss: {epoch_train_loss}')
         print(f'Validation loss: {epoch_val_loss}')
         writer.add_scalar('loss', epoch_train_loss, epoch)
-        writer.add_scalar('val', epoch_train_loss, epoch)
+        writer.add_scalar('val', epoch_val_loss, epoch)
+
+        # test model and save results 
+        denoised_img = torch.clamp(examples-model(examples), 0., 1.)
+        noisy_imgs = make_grid(examples.data, nrow=8, normalize=True, scale_each=True)
+        denoised_imgs = make_grid(denoised_img.data, nrow=8, normalize=True, scale_each=True)
+        writer.add_image('noisy images', noisy_imgs, epoch)
+        writer.add_image('denoised images', denoised_imgs, epoch)
 
     # saving final model
     print('Saving final model')
