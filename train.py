@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import h5py
 from model import DnCNN
 from utils import weights_init_kaiming
@@ -103,6 +104,9 @@ def main():
     history = {'train':[], 'val':[]}
     writer = SummaryWriter(args.log_dir)
 
+    # schedulers
+    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=1)
+
     # Main training loop
     best_val_loss = 999
     for epoch in range(args.epochs):
@@ -169,13 +173,16 @@ def main():
             best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
 
+        # reduce learning rate if validation has leveled off
+        scheduler.step(epoch_val_loss)
+
         # save epoch stats
         history['train'].append(epoch_train_loss)
         history['val'].append(epoch_val_loss)
         print(f'Training loss: {epoch_train_loss}')
         print(f'Validation loss: {epoch_val_loss}')
-        writer.add_scalar('loss', epoch_train_loss)
-        writer.add_scalar('val', epoch_train_loss)
+        writer.add_scalar('loss', epoch_train_loss, epoch)
+        writer.add_scalar('val', epoch_train_loss, epoch)
 
     # saving final model
     print('Saving final model')
