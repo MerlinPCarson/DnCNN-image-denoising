@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
 import math
 
 class DnCNN(nn.Module):
@@ -8,7 +7,7 @@ class DnCNN(nn.Module):
         super(DnCNN, self).__init__()
 
         padding = int((stride * (patch_size - 1) - patch_size + kernel_size)/2)
-        print(f'Calculated padding needed to maintain image size: {padding}')
+        #print(f'Calculated padding needed to maintain image size: {padding}')
 
         # create module list
         self.layers = []

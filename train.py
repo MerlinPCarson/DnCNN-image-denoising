@@ -9,6 +9,7 @@ import h5py
 from model import DnCNN
 from utils import weights_init_kaiming
 from tqdm import tqdm
+from tensorboardX import SummaryWriter
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -50,24 +51,33 @@ def main():
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
     parser.add_argument('--stride', type=int, default=1, help='filter stride for CNN layers')
     parser.add_argument('--noise_level', type=float, default=25.0, help='noise level for training')
+    parser.add_argument('--log_dir', type=str, default='logs', help='location of log files')
+    parser.add_argument('--model_dir', type=str, default='models', help='location of log files')
     args = parser.parse_args()
 
     # noise level for training, must be normalized like the clean image
     noise_level = args.noise_level/255
 
+    # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
     assert os.path.exists(args.val_set), f'Cannot find validation vectors file {args.train_set}'
 
+    # make sure output dirs exists
+    os.makedirs(args.log_dir, exist_ok=True)
+    os.makedirs(args.model_dir, exist_ok=True)
 
     print('Loading datasets')
 
+    # load data for training
     train_data = Dataset(args.train_set)
     val_data = Dataset(args.val_set)
 
     print(f'Number of training examples: {len(train_data)}')
     print(f'Number of validation examples: {len(val_data)}')
 
+    # create batched data loaders for model
     train_loader = DataLoader(dataset=train_data, num_workers=os.cpu_count(), batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(dataset=val_data, num_workers=os.cpu_count(), batch_size=args.batch_size, shuffle=False)
 
     # input shape for each example to network, NOTE: channels first
     num_channels, patch_height, patch_width = train_data.shape()
@@ -91,15 +101,16 @@ def main():
 
     # data struct to track training and validation losses per epoch
     history = {'train':[], 'val':[]}
+    writer = SummaryWriter(args.log_dir)
 
     # Main training loop
+    best_val_loss = 999
     for epoch in range(args.epochs):
-        print(f'Starting epoch {epoch+1}')
+        print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
         model.train()
         # iterate through batches of training examples
         epoch_train_loss = 0
-        epoch_val_loss = 0
-        steps = 0
+        train_steps = 0
 
         for data in tqdm(train_loader):
             model.zero_grad()
@@ -123,10 +134,52 @@ def main():
             loss.backward()
             optimizer.step()
 
-            steps += 1
-        
-        history['train'].append(epoch_train_loss/steps)
-        print(f'Training loss: {epoch_train_loss/steps}')
+            train_steps += 1
+
+        # start evaluation
+        model.eval() 
+        print('Validating Model')
+        epoch_val_loss = 0
+        val_steps = 0
+        with torch.no_grad():
+            for data in tqdm(val_loader):
+                # generate additive white noise from gaussian distribution
+                noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
+
+                # pack input and target it into torch variable
+                examples = Variable((data + noise).cuda()) 
+                noise = Variable(noise.cuda())
+
+                # make predictions
+                preds = model(examples)
+
+                # calculate loss
+                val_loss = criterion(preds, noise)/examples.size()[0]
+                epoch_val_loss += val_loss.item()
+
+                val_steps += 1
+
+        # epoch summary
+        epoch_train_loss /= train_steps
+        epoch_val_loss /=val_steps
+
+        # save if best model
+        if epoch_val_loss < best_val_loss:
+            print('Saving best model')
+            best_val_loss = epoch_val_loss
+            torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
+
+        # save epoch stats
+        history['train'].append(epoch_train_loss)
+        history['val'].append(epoch_val_loss)
+        print(f'Training loss: {epoch_train_loss}')
+        print(f'Validation loss: {epoch_val_loss}')
+        writer.add_scalar('loss', epoch_train_loss)
+        writer.add_scalar('val', epoch_train_loss)
+
+    # saving final model
+    print('Saving final model')
+    torch.save(model, os.path.join(args.log_dir, 'final_model.pt'))
 
     return 0
 
