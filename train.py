@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from model import DnCNN
+from model import DnCNN, DnCNN_Res
 from utils import weights_init_kaiming
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
@@ -101,7 +101,7 @@ def main():
     print(f'Cuda devices found: {[torch.cuda.get_device_name(i) for i in device_ids]}')
 
     # create model
-    model = DnCNN(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
+    model = DnCNN_Res(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
                   kernel_size=args.filter_size, stride=args.stride, num_filters=args.num_filters) 
 
     # move model to available gpus
