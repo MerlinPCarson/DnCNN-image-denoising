@@ -12,6 +12,7 @@ from utils import weights_init_kaiming
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from torchvision.utils import make_grid
+from skimage.metrics import peak_signal_noise_ratio as psnr
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -20,6 +21,7 @@ class Dataset(torch.utils.data.Dataset):
         self.file_name = file_name
         with h5py.File(file_name, 'r') as data:
             self.keys = list(data.keys())
+        np.random.shuffle(self.keys)
 
     def __len__(self):
         return len(self.keys)
@@ -40,13 +42,21 @@ def setup_gpus():
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, device_ids))
     return device_ids
 
+def psnr_of_batch(clean_imgs, denoised_imgs):
+    clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
+    denoised_imgs = denoised_imgs.data.cpu().numpy().astype(np.float32)
+    batch_psnr = 0
+    for i in range(clean_imgs.shape[0]):
+        batch_psnr += psnr(clean_imgs[i,:,:,:], denoised_imgs[i,:,:,:], data_range=1)
+    return batch_psnr/clean_imgs.shape[0]
+
 def main():
 
     parser = argparse. ArgumentParser(description='Image Denoising Trainer')
     parser.add_argument('--train_set', type=str, default='train.h5', help='h5 file with training vectors')
     parser.add_argument('--val_set', type=str, default='val.h5', help='h5 file with validation vectors')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
-    parser.add_argument('--epochs', type=int, default=50, help='number of epochs')
+    parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
     parser.add_argument('--num_layers', type=int, default=17, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
@@ -102,7 +112,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # data struct to track training and validation losses per epoch
-    history = {'train':[], 'val':[]}
+    history = {'train':[], 'val':[], 'psnr':[]}
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
@@ -125,14 +135,15 @@ def main():
             noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
 
             # pack input and target it into torch variable
-            examples = Variable((data + noise).cuda()) 
+            clean_imgs = Variable(data.cuda()) 
+            noisy_imgs = Variable((data + noise).cuda()) 
             noise = Variable(noise.cuda())
 
             # make predictions
-            preds = model(examples)
+            preds = model(noisy_imgs)
 
             # calculate loss
-            loss = criterion(preds, noise)/examples.size()[0]
+            loss = criterion(preds, noise)/noisy_imgs.size()[0]
             epoch_train_loss += loss.item()
 
             # backprop
@@ -145,6 +156,7 @@ def main():
         model.eval() 
         print('Validating Model')
         epoch_val_loss = 0
+        epoch_val_psnr = 0
         val_steps = 0
         with torch.no_grad():
             for data in tqdm(val_loader):
@@ -152,21 +164,28 @@ def main():
                 noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
 
                 # pack input and target it into torch variable
-                examples = Variable((data + noise).cuda()) 
+                clean_imgs = Variable(data.cuda()) 
+                noisy_imgs = Variable((data + noise).cuda()) 
                 noise = Variable(noise.cuda())
 
                 # make predictions
-                preds = model(examples)
+                preds = model(noisy_imgs)
 
                 # calculate loss
-                val_loss = criterion(preds, noise)/examples.size()[0]
+                val_loss = criterion(preds, noise)/noisy_imgs.size()[0]
                 epoch_val_loss += val_loss.item()
+
+                # calculate PSNR 
+                denoised_imgs = torch.clamp(noisy_imgs-preds, 0., 1.)
+                epoch_val_psnr += psnr_of_batch(clean_imgs, denoised_imgs)
+
 
                 val_steps += 1
 
         # epoch summary
         epoch_train_loss /= train_steps
-        epoch_val_loss /=val_steps
+        epoch_val_loss /= val_steps
+        epoch_val_psnr /= val_steps
 
         # save if best model
         if epoch_val_loss < best_val_loss:
@@ -180,17 +199,23 @@ def main():
         # save epoch stats
         history['train'].append(epoch_train_loss)
         history['val'].append(epoch_val_loss)
+        history['psnr'].append(epoch_val_psnr)
         print(f'Training loss: {epoch_train_loss}')
         print(f'Validation loss: {epoch_val_loss}')
+        print(f'Validation PSNR: {epoch_val_psnr}')
         writer.add_scalar('loss', epoch_train_loss, epoch)
         writer.add_scalar('val', epoch_val_loss, epoch)
+        writer.add_scalar('PSNR', epoch_val_psnr, epoch)
 
         # test model and save results 
-        denoised_img = torch.clamp(examples-model(examples), 0., 1.)
-        noisy_imgs = make_grid(examples.data, nrow=8, normalize=True, scale_each=True)
-        denoised_imgs = make_grid(denoised_img.data, nrow=8, normalize=True, scale_each=True)
-        writer.add_image('noisy images', noisy_imgs, epoch)
-        writer.add_image('denoised images', denoised_imgs, epoch)
+        if epoch % 5 == 0:
+            denoised_imgs = torch.clamp(noisy_imgs-preds, 0., 1.)
+            clean_imgs = make_grid(clean_imgs.data, nrow=8, normalize=True, scale_each=True)
+            noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
+            denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
+            writer.add_image('clean images', clean_imgs, epoch)
+            writer.add_image('noisy images', noisy_imgs, epoch)
+            writer.add_image('denoised images', denoised_imgs, epoch)
 
     # saving final model
     print('Saving final model')
