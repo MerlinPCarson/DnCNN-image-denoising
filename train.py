@@ -176,7 +176,7 @@ def main():
                 epoch_val_loss += val_loss.item()
 
                 # calculate PSNR 
-                denoised_imgs = torch.clamp(noisy_imgs-preds, 0., 1.)
+                denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
                 epoch_val_psnr += psnr_of_batch(clean_imgs, denoised_imgs)
 
 
@@ -209,7 +209,7 @@ def main():
 
         # test model and save results 
         if epoch % 5 == 0:
-            denoised_imgs = torch.clamp(noisy_imgs-preds, 0., 1.)
+            denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
             clean_imgs = make_grid(clean_imgs.data, nrow=8, normalize=True, scale_each=True)
             noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
             denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
