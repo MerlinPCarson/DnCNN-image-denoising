@@ -4,7 +4,7 @@ import argparse
 import cv2 as cv
 import numpy as np
 from glob import glob
-from train.py import setup_gpus
+from train import setup_gpus
 import torch
 from torch.autograd import Variable
 from skimage.metrics import peak_signal_noise_ratio as psnr
@@ -24,6 +24,10 @@ def main():
 
     assert os.path.exists(args.img_dir), f'Image directory {args.img_dir} not found'
     assert os.path.exists(args.model_name), f'Model {args.model_name} not found'
+
+    # detect gpus and setup environment variables
+    device_ids = setup_gpus()
+    print(f'Cuda devices found: {[torch.cuda.get_device_name(i) for i in device_ids]}')
 
     # load model 
     model = torch.load(args.model_name)
