@@ -36,9 +36,9 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
     #num_channels = 3
     print(f'[Data Generation] Creating training data from {train_path} with {num_channels} channels')
     num_train = 0
-    h5f = h5py.File('/stash/tlab/mcarson/train.h5', 'w')
+    h5f = h5py.File('train.h5', 'w')
     num_train = 0
-    for f in tqdm(sorted(glob(os.path.join(train_path, '*.jpg')))):
+    for f in tqdm(sorted(glob(os.path.join(train_path, '*.png')))):
         #print(f'{num_train+1}: Preprocessing {f}')
         img = cv.imread(f)
         height, width, ch = img.shape
@@ -58,8 +58,8 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
 
     print(f'[Data Generation] Creating validation data from {val_path}')
     num_val = 0
-    h5f = h5py.File('/stash/tlab/mcarson/val.h5', 'w')
-    for f in tqdm(sorted(glob(os.path.join(val_path, '*.jpg')))):
+    h5f = h5py.File('val.h5', 'w')
+    for f in tqdm(sorted(glob(os.path.join(val_path, '*.png')))):
         #print(f'Preprocessing {f}')
         img = cv.imread(f)
         img = np.array(img[:,:,:num_channels].reshape((img.shape[0],img.shape[1],num_channels))/255)
@@ -116,14 +116,14 @@ def main():
     script_dir = os.path.dirname(os.path.realpath(__file__))
     
     parser = argparse.ArgumentParser(description="DnCNN-data generation")
-    parser.add_argument("--train_path", type=str, default='data/train', help='root directory for training data')
-    parser.add_argument("--val_path", type=str, default='data/Set12', help='root directory for validation data')
-    parser.add_argument("--test_path", type=str, default='data/Set12', help='root directory for test data')
+    parser.add_argument("--train_path", type=str, default='data/train_color/train', help='root directory for training data')
+    parser.add_argument("--val_path", type=str, default='data/train_color/val', help='root directory for validation data')
+    parser.add_argument("--test_path", type=str, default='data/train_color/test', help='root directory for test data')
     parser.add_argument("--patch_size", type=int, default=40, help="image patch size to train on")
     parser.add_argument("--stride", type=int, default=10, help="image patch stride")
     parser.add_argument("--scaling_factors", type=str, default='1,.9,.8,.7', help="image scaling")
     parser.add_argument("--num_augments", type=int, default=0, help="number of data augmentations per patch")
-    parser.add_argument("--num_channels", type=int, default=1, help="number of channels (bw=1, color=3)")
+    parser.add_argument("--num_channels", type=int, default=3, help="number of channels (bw=1, color=3)")
     args = parser.parse_args()
 
     train_path = os.path.join(script_dir, args.train_path)

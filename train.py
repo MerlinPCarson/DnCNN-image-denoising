@@ -148,7 +148,7 @@ def main():
             preds = model(noisy_imgs)
 
             # calculate loss
-            loss = criterion(preds, noise)/noisy_imgs.size()[0]
+            loss = criterion(preds, noise)/(2*noisy_imgs.size()[0])
             epoch_train_loss += loss.item()
 
             # backprop
