@@ -30,6 +30,10 @@ def main():
     device_ids = setup_gpus()
     print(f'Cuda devices found: {[torch.cuda.get_device_name(i) for i in device_ids]}')
 
+    # load model params
+    model_history = pickle.load(open(args.model_name.replace('.pt', '.npy'), 'rb'))
+    num_channels = model_history['model']['num_channels']
+
     # load model 
     model = torch.load(args.model_name)
     model.eval() 
@@ -43,9 +47,9 @@ def main():
         print(f'Denoising {f}')
 
         # prepare clean image
-        img = cv.imread(f).astype(np.float32)[:,:,:1]
+        img = cv.imread(f).astype(np.float32)[:,:,:num_channels]
         clean_img =  img/255
-        clean_img = np.reshape(clean_img, (1,1,clean_img.shape[0], clean_img.shape[1]))
+        clean_img = np.reshape(clean_img, (1,num_channels,clean_img.shape[0], clean_img.shape[1]))
         clean_img = torch.FloatTensor(clean_img)
 
         # prepare noisy image
