@@ -5,6 +5,7 @@ import argparse
 import cv2 as cv
 import h5py
 from glob import glob
+from tqdm import tqdm
 
 #import matplotlib.pyplot as plt
 
@@ -36,7 +37,7 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
     num_train = 0
     h5f = h5py.File('train.h5', 'w')
     num_train = 0
-    for f in sorted(glob(os.path.join(train_path, '*.png'))):
+    for f in tqdm(sorted(glob(os.path.join(train_path, '*.png')))):
         print(f'Preprocessing {f}')
         img = cv.imread(f)
         height, width, ch = img.shape
@@ -69,17 +70,17 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
             num_val += 1
     h5f.close()
         
-    print(f'[Data Generation] Creating test data from {test_path}')
-    num_test = 0
-    h5f = h5py.File('test.h5', 'w')
-    for f in sorted(glob(os.path.join(test_path, '*.png'))):
-        print(f'Preprocessing {f}')
-        img = cv.imread(f)
-        # channels first
-        img = np.array(img[:,:,0].reshape((1,img.shape[0],img.shape[1]))/255, dtype=np.float32)
-        h5f.create_dataset(str(num_test), data=img)
-        num_test += 1
-    h5f.close()
+#    print(f'[Data Generation] Creating test data from {test_path}')
+#    num_test = 0
+#    h5f = h5py.File('test.h5', 'w')
+#    for f in sorted(glob(os.path.join(test_path, '*.png'))):
+#        print(f'Preprocessing {f}')
+#        img = cv.imread(f)
+#        # channels first
+#        img = np.array(img[:,:,0].reshape((1,img.shape[0],img.shape[1]))/255, dtype=np.float32)
+#        h5f.create_dataset(str(num_test), data=img)
+#        num_test += 1
+#    h5f.close()
         
     print(f'Number of training examples {num_train}')    
     print(f'Number of validation examples {num_val}')    
