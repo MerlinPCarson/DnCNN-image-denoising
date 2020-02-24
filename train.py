@@ -1,6 +1,7 @@
 import os
 import sys
 import h5py
+import pickle
 import argparse
 import numpy as np
 import torch
@@ -112,7 +113,11 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # data struct to track training and validation losses per epoch
-    history = {'train':[], 'val':[], 'psnr':[]}
+    model_params = {'num_channels':num_channels, 'patch_size':patch_height, \
+                    'num_layers':args.num_layers, 'kernel_size':args.filter_size,\
+                    'stride':args.stride, 'num_filters':args.num_filters}
+    history = {'model': model_params, 'train':[], 'val':[], 'psnr':[]}
+    pickle.dump(history, open(os.path.join(args.log_dir, 'model.npy'), 'wb'))
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
@@ -192,6 +197,7 @@ def main():
             print('Saving best model')
             best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
+            pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
 
         # reduce learning rate if validation has leveled off
         scheduler.step(epoch_val_loss)
@@ -220,6 +226,7 @@ def main():
     # saving final model
     print('Saving final model')
     torch.save(model, os.path.join(args.log_dir, 'final_model.pt'))
+    pickle.dump(history, open(os.path.join(args.log_dir, 'final_model.npy'), 'wb'))
 
     return 0
 

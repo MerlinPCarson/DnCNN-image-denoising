@@ -41,7 +41,7 @@ class DnCNN(nn.Module):
 
 
 class DnCNN_Res(nn.Module):
-    def __init__(self, num_channels, patch_size, num_layers, kernel_size, stride, num_filters):
+    def __init__(self, num_channels=1, patch_size=40, num_layers=17, kernel_size=3, stride=1, num_filters=64):
         super(DnCNN_Res, self).__init__()
 
         padding = int((stride * (patch_size - 1) - patch_size + kernel_size)/2)
