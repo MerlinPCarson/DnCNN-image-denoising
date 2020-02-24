@@ -38,7 +38,7 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
     num_train = 0
     h5f = h5py.File('/stash/tlab/mcarson/train.h5', 'w')
     num_train = 0
-    for f in tqdm(sorted(glob(os.path.join(train_path, '*.jpg')))[:10]):
+    for f in tqdm(sorted(glob(os.path.join(train_path, '*.jpg')))):
         #print(f'{num_train+1}: Preprocessing {f}')
         img = cv.imread(f)
         height, width, ch = img.shape
