@@ -1,5 +1,6 @@
 import os
 import sys
+import pickle
 import argparse
 import cv2 as cv
 import numpy as np
@@ -13,7 +14,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 def main():
 
     parser = argparse. ArgumentParser(description='Image Denoising')
-    parser.add_argument('--img_dir', type=str, default='data/Set12', help='location of files to denoise')
+    parser.add_argument('--img_dir', type=str, default='data/train_color/test', help='location of files to denoise')
     parser.add_argument('--out_dir', type=str, default='output', help='location to save output images')
     parser.add_argument('--img', type=str, help='location of a file to denoise')
     parser.add_argument('--noise_level', type=float, default=25.0, help='noise level for training')
@@ -46,10 +47,9 @@ def main():
     for f in sorted(glob(os.path.join(args.img_dir, '*.png'))):
         print(f'Denoising {f}')
 
-        # prepare clean image
         img = cv.imread(f).astype(np.float32)[:,:,:num_channels]
-        clean_img =  img/255
-        clean_img = np.reshape(clean_img, (1,num_channels,clean_img.shape[0], clean_img.shape[1]))
+        clean_img = np.einsum('ijk->kij', img.astype(np.float32)/255) 
+        clean_img = np.expand_dims(clean_img, axis=0)
         clean_img = torch.FloatTensor(clean_img)
 
         # prepare noisy image
@@ -61,12 +61,14 @@ def main():
             
         # save images
         file_name = os.path.basename(f)
-        denoised_img = denoised_img.cpu().data.numpy().reshape((denoised_img.shape[2], denoised_img.shape[3], denoised_img.shape[1])).astype(np.float32) 
+        denoised_img = denoised_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
         denoised_img *= 255     # undo normalization
+        denoised_img = np.einsum('ijk->jki', denoised_img)
         cv.imwrite(img=denoised_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(args.out_dir, file_name.replace('.png', '-denoised.png')))
 
-        noisy_img = np.array(noisy_img.cpu().data.numpy().reshape((noisy_img.shape[2], noisy_img.shape[3], noisy_img.shape[1]))).astype(np.float32)
+        noisy_img = noisy_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
         noisy_img *= 255        # undo normalization
+        noisy_img = np.einsum('ijk->jki', noisy_img) 
         cv.imwrite(img=noisy_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(args.out_dir, file_name.replace('.png', '-noisy.png')))
 
         pnsr = psnr(img, denoised_img, data_range=255)
