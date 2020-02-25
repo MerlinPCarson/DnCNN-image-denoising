@@ -40,6 +40,8 @@ class Dataset(torch.utils.data.Dataset):
 def setup_gpus():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     device_ids = [i for i in range(torch.cuda.device_count())]
+    device_ids = device_ids[:-1]
+    print(device_ids)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, device_ids))
     return device_ids
 
@@ -59,7 +61,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
-    parser.add_argument('--num_layers', type=int, default=17, help='number of CNN layers in network')
+    parser.add_argument('--num_layers', type=int, default=20, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
     parser.add_argument('--stride', type=int, default=1, help='filter stride for CNN layers')
@@ -215,7 +217,7 @@ def main():
 
         # test model and save results 
         if epoch % 5 == 0:
-            denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
+            #denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
             clean_imgs = make_grid(clean_imgs.data, nrow=8, normalize=True, scale_each=True)
             noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
             denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
