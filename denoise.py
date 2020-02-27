@@ -39,10 +39,13 @@ def main():
     model = torch.load(args.model_name)
     model.eval() 
 
+    model_dir = os.path.dirname(args.model_name)
+    out_dir = os.path.join(model_dir, args.out_dir)
     # make sure output directory exists
-    os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
 
     test_psnr = 0
+    psnr_improvement = 0
     num_test_files = 0
     for f in sorted(glob(os.path.join(args.img_dir, '*.png'))):
         print(f'Denoising {f}')
@@ -64,20 +67,24 @@ def main():
         denoised_img = denoised_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
         denoised_img *= 255     # undo normalization
         denoised_img = np.einsum('ijk->jki', denoised_img)
-        cv.imwrite(img=denoised_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(args.out_dir, file_name.replace('.png', '-denoised.png')))
+        cv.imwrite(img=denoised_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(out_dir, file_name.replace('.png', '-denoised.png')))
 
         noisy_img = noisy_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
         noisy_img *= 255        # undo normalization
         noisy_img = np.einsum('ijk->jki', noisy_img) 
-        cv.imwrite(img=noisy_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(args.out_dir, file_name.replace('.png', '-noisy.png')))
+        cv.imwrite(img=noisy_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(out_dir, file_name.replace('.png', '-noisy.png')))
 
-        pnsr = psnr(img, denoised_img, data_range=255)
-        print(f'PNSR of {f}: {pnsr}')
+        psnr_pre = psnr(img, noisy_img, data_range=255)
+        psnr_post = psnr(img, denoised_img, data_range=255)
+        psnr_diff = psnr_post-psnr_pre
+        print(f'PNSR of {f}: {psnr_post}, increase of {psnr_diff}')
 
-        test_psnr += pnsr
+        psnr_improvement += psnr_diff
+        test_psnr += psnr_post
         num_test_files += 1
 
-    print(f'Average PNSR of testset is {test_psnr/num_test_files}')
+    print(f'Average PSNR of testset is {test_psnr/num_test_files}')
+    print(f'Average increase in PSNR of testset is {psnr_improvement/num_test_files}')
 
     return 0
 

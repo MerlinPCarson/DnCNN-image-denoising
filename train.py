@@ -123,7 +123,7 @@ def main():
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
-    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=4)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
 
     # Main training loop
     best_val_loss = 999
