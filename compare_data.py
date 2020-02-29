@@ -14,7 +14,7 @@ def compare_datasets(dataset1, dataset2):
 def main():
     #dataset1 = sys.argv[1]
     #dataset2 = sys.argv[2]
-    dataset1 = 'val.h5' 
+    dataset1 = '/stash/tlab/mcarson/val.h5' 
     dataset2 = 'val-orig.h5' 
     
     print(f'Comparing dataset {dataset1} to {dataset2}')

@@ -47,6 +47,7 @@ def main():
     test_psnr = 0
     psnr_improvement = 0
     num_test_files = 0
+    
     for f in sorted(glob(os.path.join(args.img_dir, '*.png'))):
         print(f'Denoising {f}')
 
