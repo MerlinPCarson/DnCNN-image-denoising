@@ -6,7 +6,7 @@ import torch
 from glob import glob
 
 from train import gen_noise
-
+from skimage.metrics import peak_signal_noise_ratio as psnr
 
 
 def main():
@@ -30,6 +30,8 @@ def main():
         noisy_images = images + noise.data.numpy()
 
         for i in range(images.size()[0]):
+            psnr_val = psnr(images[i].data.numpy().astype(np.float32), noisy_images[i].data.numpy().astype(np.float32), data_range=1)
+            print(f'PSNR:{psnr_val}')
             clean_img = images[i].data.numpy()*255
             clean_img = np.einsum('ijk->jki', clean_img.astype(np.float32)) 
             noisy_img = noisy_images[i].data.numpy()*255
