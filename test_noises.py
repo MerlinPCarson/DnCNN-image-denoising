@@ -26,7 +26,7 @@ def main():
 
     images = torch.FloatTensor(images)
     for nt in noise_types:
-        noise = gen_noise(images, nt)
+        noise = gen_noise(images.size(), nt)
         noisy_images = images + noise.data.numpy()
 
         for i in range(images.size()[0]):

@@ -47,29 +47,31 @@ def setup_gpus():
     return device_ids
 
 def psnr_of_batch(clean_imgs, denoised_imgs):
-    clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
+    #clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
+    clean_imgs = clean_imgs.data.numpy().astype(np.float32)
     denoised_imgs = denoised_imgs.data.cpu().numpy().astype(np.float32)
     batch_psnr = 0
     for i in range(clean_imgs.shape[0]):
         batch_psnr += psnr(clean_imgs[i,:,:,:], denoised_imgs[i,:,:,:], data_range=1)
     return batch_psnr/clean_imgs.shape[0]
 
-def gen_noise(batch, noise_type):
-    noise = torch.zeros(batch.size())
-    batch_size = batch.size()[0]
+def gen_noise(batch_size, noise_type):
+    noise = torch.zeros(batch_size)
     if noise_type == 'normal':
-        noise_levels = np.linspace(0,55/255, batch_size)
+        noise_levels = np.linspace(0,55/255, batch_size[0])
         for i, nl in enumerate(noise_levels):
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).normal_(mean=0, std=nl)
 
     elif noise_type == 'uniform':
-        noise_levels = np.linspace(0,0.25, batch_size)
+        noise_levels = np.linspace(0,0.25, batch_size[0])
         for i, nl in enumerate(noise_levels):
             noise_mask = np.random.uniform(size=noise[0].shape) < nl 
+            #noise_mask = np.random.uniform(size=noise[0,0].shape) < nl 
+            #noise_mask = np.stack((noise_mask,noise_mask,noise_mask), axis=0)
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0) * noise_mask
 
     elif noise_type == 's&p':
-        noise_levels = np.linspace(0,0.25, batch_size)
+        noise_levels = np.linspace(0,0.25, batch_size[0])
         for i, nl in enumerate(noise_levels):
 #            noise_salt = np.random.uniform(0.0,1.0, size=noise[0,0].shape)
 #            _, noise_salt = cv.threshold(noise_salt, (1-nl/2), 1.0, cv.THRESH_BINARY)
@@ -117,6 +119,10 @@ def main():
     os.makedirs(args.log_dir, exist_ok=True)
     os.makedirs(args.model_dir, exist_ok=True)
 
+    # detect gpus and setup environment variables
+    device_ids = setup_gpus()
+    print(f'Cuda devices found: {[torch.cuda.get_device_name(i) for i in device_ids]}')
+
     print('Loading datasets')
 
     # load data for training
@@ -127,17 +133,13 @@ def main():
     print(f'Number of validation examples: {len(val_data)}')
 
     # create batched data loaders for model
-    train_loader = DataLoader(dataset=train_data, num_workers=os.cpu_count(), batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(dataset=train_data, num_workers=os.cpu_count(), batch_size=args.batch_size*len(device_ids), shuffle=True)
     val_loader = DataLoader(dataset=val_data, num_workers=os.cpu_count(), batch_size=args.batch_size, shuffle=False)
 
     # input shape for each example to network, NOTE: channels first
     num_channels, patch_height, patch_width = train_data.shape()
 
     print(f'Input shape to model forward will be: ({args.batch_size}, {num_channels}, {patch_height}, {patch_width})')
-
-    # detect gpus and setup environment variables
-    device_ids = setup_gpus()
-    print(f'Cuda devices found: {[torch.cuda.get_device_name(i) for i in device_ids]}')
 
     # create model
     model = DnCNN_Res(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
@@ -170,9 +172,8 @@ def main():
         epoch_train_loss = 0
         train_steps = 0
 
-        for data in tqdm(train_loader):
+        for clean_imgs in tqdm(train_loader):
             model.zero_grad()
-            optimizer.zero_grad()
 
             # generate additive white noise from gaussian distribution
             # Model-S
@@ -181,7 +182,7 @@ def main():
             # Model-B
 
             noise_type = np.random.choice(noise_types)
-            noise = gen_noise(data, noise_type)
+            noise = gen_noise(clean_imgs.size(), noise_type)
 #            if noise_type == 'normal':
 #                for i, nl in enumerate(noise_levels):
 #                    noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).normal_(mean=0, std=nl)
@@ -192,8 +193,8 @@ def main():
 
 
             # pack input and target it into torch variable
-            clean_imgs = Variable(data.cuda()) 
-            noisy_imgs = Variable((data + noise).cuda()) 
+            #clean_imgs = Variable(data.cuda()) 
+            noisy_imgs = Variable((clean_imgs + noise).cuda()) 
             noise = Variable(noise.cuda())
 
             # make predictions
@@ -201,7 +202,7 @@ def main():
 
             # calculate loss
             loss = criterion(preds, noise)/(2*noisy_imgs.size()[0])
-            epoch_train_loss += loss.item()
+            epoch_train_loss += loss.detach()
 
             # backprop
             loss.backward()
@@ -220,20 +221,21 @@ def main():
         epoch_psnr_pepper = 0
         num_pepper = 0
         val_steps = 0
+        #model.zero_grad()
         with torch.no_grad():
-            for data in tqdm(val_loader):
+            for clean_imgs in tqdm(val_loader):
                 # generate additive white noise from gaussian distribution
                 # DnCNN-S
                 #noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
 
                 # DnCNN-M
                 noise_type = np.random.choice(noise_types)
-                noise = gen_noise(data, noise_type)
+                noise = gen_noise(clean_imgs.size(), noise_type)
 
 
                 # pack input and target it into torch variable
-                clean_imgs = Variable(data.cuda()) 
-                noisy_imgs = Variable((data + noise).cuda()).clamp(0.0,1.0)
+                #clean_imgs = Variable(data.cuda()) 
+                noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
                 noise = Variable(noise.cuda())
 
                 # make predictions
@@ -241,7 +243,7 @@ def main():
 
                 # calculate loss
                 val_loss = criterion(preds, noise)/noisy_imgs.size()[0]
-                epoch_val_loss += val_loss.item()
+                epoch_val_loss += val_loss.detach()
 
                 # calculate PSNR 
                 denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
@@ -294,17 +296,18 @@ def main():
 
         # test model and save results 
         if epoch % 5 == 0:
-            clean_imgs = make_grid(clean_imgs.data, nrow=8, normalize=True, scale_each=True)
-            writer.add_image('clean images', clean_imgs, epoch)
-            for noise_type in noise_types:
-                noise = gen_noise(data, noise_type)
-                noisy_imgs = Variable((data + noise).cuda()).clamp(0.0,1.0)
-                preds = model(noisy_imgs)
-                denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
-                #noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
-                denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
-                #writer.add_image(f'{noise_type} noisy images', noisy_imgs, epoch)
-                writer.add_image(f'{noise_type} denoised images', denoised_imgs, epoch)
+            with torch.no_grad():
+                clean_pics = make_grid(clean_imgs, nrow=8, normalize=True, scale_each=True)
+                writer.add_image('clean images', clean_pics, epoch)
+                for noise_type in noise_types:
+                    noise = gen_noise(clean_imgs.size(), noise_type)
+                    noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
+                    preds = model(noisy_imgs)
+                    denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
+                    #noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
+                    denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
+                    #writer.add_image(f'{noise_type} noisy images', noisy_imgs, epoch)
+                    writer.add_image(f'{noise_type} denoised images', denoised_imgs, epoch)
 
     # saving final model
     print('Saving final model')
