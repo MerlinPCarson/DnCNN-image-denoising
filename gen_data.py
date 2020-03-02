@@ -31,12 +31,22 @@ def image_augment(img, num_augs):
 
     return data_aug
 
+def downsample(clean_imgs, scale):
+    downsample_imgs = np.empty(clean_imgs.shape)
+    height, width, _ = clean_imgs[0].shape
+    down_h = int(height/scale)
+    down_w = int(width/scale)
+    for i in range(clean_imgs.shape[0]):
+        resized_img = cv.resize(clean_imgs[i], (down_w,down_h), cv.INTER_AREA)
+        downsample_imgs[i] = cv.resize(resized_img, (width,height), cv.INTER_AREA)
+    return downsample_imgs
 
 def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_factors, num_augments, num_channels):
     #num_channels = 3
+    scales = [2,3,4]
     print(f'[Data Generation] Creating training data from {train_path} with {num_channels} channels')
     num_train = 0
-    h5f = h5py.File('train.h5', 'w')
+    h5f = h5py.File('/stash/tlab/mcarson/train.h5', 'w')
     num_train = 0
     for f in tqdm(sorted(glob(os.path.join(train_path, '*.png')))):
         #print(f'{num_train+1}: Preprocessing {f}')
@@ -53,12 +63,18 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
                 for aug in range(data_aug.shape[0]):
                     h5f.create_dataset(str(num_train), data=data_aug[aug])
                     num_train += 1
+                # downsampling
+                for scale in scales:
+                    downsampled_imgs = downsample(data_aug)
+                    for i in range(downsampled_imgs.shape[0]):
+                        h5f.create_dataset(str(num_train), data=downsampled_imgs[i])
+                        num_train += 1
 
     h5f.close()
 
     print(f'[Data Generation] Creating validation data from {val_path}')
     num_val = 0
-    h5f = h5py.File('val.h5', 'w')
+    h5f = h5py.File('/stash/tlab/mcarsonval.h5', 'w')
     for f in tqdm(sorted(glob(os.path.join(val_path, '*.png')))):
         #print(f'Preprocessing {f}')
         img = cv.imread(f)
@@ -69,8 +85,21 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
             patch = np.einsum('ijk->kij', patches[patch_num].astype(np.float32)) 
             h5f.create_dataset(str(num_val), data=patch)
             num_val += 1
+
     h5f.close()
+
+    num_sisr_val = 0
+    h5f = h5py.File('/stash/tlab/mcarson/val_sisr.h5', 'w')
+    # downsampling
+    for scale in scales:
+        downsampled_imgs = downsample(patches, scale)
+        for i in range(downsampled_imgs.shape[0]):
+            d_img = np.einsum('ijk->kij', downsampled_imgs[i].astype(np.float32)) 
+            h5f.create_dataset(str(num_sisr_val), data=d_img)
+            num_sisr_val += 1
         
+    h5f.close()
+
 #    print(f'[Data Generation] Creating test data from {test_path}')
 #    num_test = 0
 #    h5f = h5py.File('test.h5', 'w')
@@ -85,6 +114,8 @@ def generate_data(train_path, val_path, test_path, patch_size, stride, scaling_f
         
     print(f'Number of training examples {num_train}')    
     print(f'Number of validation examples {num_val}')    
+    print(f'Number of validation examples SISR {num_sisr_val}')    
+
 #    print(f'Number of test examples {num_test}')    
 
 

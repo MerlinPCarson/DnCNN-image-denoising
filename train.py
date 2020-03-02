@@ -86,8 +86,17 @@ def gen_noise(batch_size, noise_type):
             noise[i,:,:,:] = torch.FloatTensor(noise_pepper)
             #torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0)
             #_, noise[i,:,:,:] = cv.threshold(noise, (1-nl),1.0, cv.THRESH_BINARY)
-
     return noise
+
+def downsample(clean_imgs, scale):
+    downsample_imgs = np.empty(clean_imgs.shape)
+    height, width, _ = clean_imgs[0].shape
+    down_h = int(height/scale)
+    down_w = int(width/scale)
+    for i in range(clean_imgs.shape[0]):
+        resized_img = cv.resize(clean_imgs[i], (down_w,down_h), cv.INTER_AREA)
+        downsample_imgs[i] = cv.resize(resized_img, (width,height), cv.INTER_AREA)
+    return downsample_imgs
 
 def main():
 
@@ -95,29 +104,33 @@ def main():
     parser.add_argument('--train_set', type=str, default='train.h5', help='h5 file with training vectors')
     parser.add_argument('--val_set', type=str, default='val.h5', help='h5 file with validation vectors')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
-    parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
-    parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+    parser.add_argument('--epochs', type=int, default=50, help='number of epochs')
+    parser.add_argument('--lr', type=float, default=0.01, help='learning rate start')
+    parser.add_argument('--lr_end', type=float, default=0.0001, help='learning rate end')
     parser.add_argument('--num_layers', type=int, default=20, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
     parser.add_argument('--stride', type=int, default=1, help='filter stride for CNN layers')
     parser.add_argument('--noise_level', type=float, default=25.0, help='noise level for training')
     parser.add_argument('--log_dir', type=str, default='logs', help='location of log files')
-    parser.add_argument('--model_dir', type=str, default='models', help='location of log files')
+    #parser.add_argument('--model_dir', type=str, default='models', help='location of log files')
     args = parser.parse_args()
 
     # noise level for training, must be normalized like the clean image
     noise_level = args.noise_level/255
     max_noise_level = 55/255
-    noise_types = np.array(['normal', 'uniform', 'pepper'])
+    #noise_types = np.array(['normal', 'uniform', 'pepper'])
+    noise_types = np.array(['normal','pepper'])
 
+    #gamma = np.log(args.lr_end/args.lr)/(-args.epochs)
+    gamma = 0.96
     # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
     assert os.path.exists(args.val_set), f'Cannot find validation vectors file {args.train_set}'
 
     # make sure output dirs exists
     os.makedirs(args.log_dir, exist_ok=True)
-    os.makedirs(args.model_dir, exist_ok=True)
+    #os.makedirs(args.model_dir, exist_ok=True)
 
     # detect gpus and setup environment variables
     device_ids = setup_gpus()
@@ -151,6 +164,7 @@ def main():
     # setup loss and optimizer
     criterion = torch.nn.MSELoss(reduction='sum').cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
 
     # data struct to track training and validation losses per epoch
     model_params = {'num_channels':num_channels, 'patch_size':patch_height, \
@@ -161,11 +175,17 @@ def main():
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
-    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
+    #scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
 
     # Main training loop
     best_val_loss = 999 
-    for epoch in range(args.epochs):
+    paitience = 0
+    best_psnr_normal = 0
+    best_psnr_uniform = 0
+    best_psnr_pepper = 0
+    epoch = 0
+#    for epoch in range(args.epochs):
+    while epoch < args.epochs:
         print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
         model.train()
         # iterate through batches of training examples
@@ -264,11 +284,24 @@ def main():
         epoch_train_loss /= train_steps
         epoch_val_loss /= val_steps
         epoch_psnr_normal /= num_normal 
-        epoch_psnr_uniform /= num_uniform 
+#        epoch_psnr_uniform /= num_uniform 
         epoch_psnr_pepper /= num_pepper 
 
+#        if epoch_val_loss < best_val_loss:
+#            best_val_loss = epoch_val_loss
+#            epoch += 1
+#        elif paitience < 2:
+#            paitience +=1
+#        else:
+#            paitience = 0
+#            print(f'Reloading model and restarting epoch {epoch}')
+#            torch.load(os.path.join(args.log_dir, 'best_model.pt'))
+#            continue
+#
         # reduce learning rate if validation has leveled off
-        scheduler.step(epoch_val_loss)
+        #scheduler.step(epoch_val_loss)
+        # exponential decay of learning rate
+        scheduler.step()
 
         # save epoch stats
         history['train'].append(epoch_train_loss)
@@ -288,8 +321,12 @@ def main():
         writer.add_scalar('PSNR-pepper', epoch_psnr_pepper, epoch)
 
         # save if best model
-        if epoch_val_loss < best_val_loss:
+        #if epoch_val_loss < best_val_loss:
+        if epoch_psnr_normal >= best_psnr_normal and epoch_psnr_normal >= best_psnr_uniform and epoch_psnr_pepper >= best_psnr_pepper:
             print('Saving best model')
+            best_psnr_normal = epoch_psnr_normal
+            best_psnr_uniform = epoch_psnr_uniform
+            best_psnr_pepper = epoch_psnr_pepper
             best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
