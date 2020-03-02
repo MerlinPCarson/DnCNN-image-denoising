@@ -40,7 +40,7 @@ class Dataset(torch.utils.data.Dataset):
 def setup_gpus():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     device_ids = [i for i in range(torch.cuda.device_count())]
-    device_ids = device_ids[:-1]
+    #device_ids = device_ids[:-1]
     print(device_ids)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, device_ids))
     return device_ids
@@ -53,6 +53,16 @@ def psnr_of_batch(clean_imgs, denoised_imgs):
         batch_psnr += psnr(clean_imgs[i,:,:,:], denoised_imgs[i,:,:,:], data_range=1)
     return batch_psnr/clean_imgs.shape[0]
 
+def gen_noise(batch_size, max_noise_level):
+
+    # generate additive white noise from gaussian distribution
+    noise = torch.zeros(batch_size)
+    noise_levels = np.linspace(0,max_noise_level, batch_size[0])
+    for i, nl in enumerate(noise_levels):
+        noise[i] = torch.FloatTensor(noise[i].size()).normal_(mean=0, std=nl)
+
+    return noise
+
 def main():
 
     parser = argparse. ArgumentParser(description='Image Denoising Trainer')
@@ -61,6 +71,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+    parser.add_argument('--lr_decay', type=float, default=0.94, help='learning rate decay factor')
     parser.add_argument('--num_layers', type=int, default=20, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
@@ -72,6 +83,7 @@ def main():
 
     # noise level for training, must be normalized like the clean image
     noise_level = args.noise_level/255
+    max_noise_level = 55/255
 
     # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
@@ -113,6 +125,7 @@ def main():
     # setup loss and optimizer
     criterion = torch.nn.MSELoss(reduction='sum').cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_decay)
 
     # data struct to track training and validation losses per epoch
     model_params = {'num_channels':num_channels, 'patch_size':patch_height, \
@@ -123,7 +136,7 @@ def main():
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
-    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
+#    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
 
     # Main training loop
     best_val_loss = 999
@@ -139,7 +152,7 @@ def main():
             optimizer.zero_grad()
 
             # generate additive white noise from gaussian distribution
-            noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
+            noise = gen_noise(data.size(), max_noise_level)
 
             # pack input and target it into torch variable
             clean_imgs = Variable(data.cuda()) 
@@ -168,7 +181,7 @@ def main():
         with torch.no_grad():
             for data in tqdm(val_loader):
                 # generate additive white noise from gaussian distribution
-                noise = torch.FloatTensor(data.size()).normal_(mean=0, std=noise_level)
+                noise = gen_noise(data.size(), max_noise_level)
 
                 # pack input and target it into torch variable
                 clean_imgs = Variable(data.cuda()) 
@@ -202,7 +215,9 @@ def main():
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
 
         # reduce learning rate if validation has leveled off
-        scheduler.step(epoch_val_loss)
+        #scheduler.step(epoch_val_loss)
+        # learning rate exponential decay 
+        scheduler.step()
 
         # save epoch stats
         history['train'].append(epoch_train_loss)
@@ -217,7 +232,6 @@ def main():
 
         # test model and save results 
         if epoch % 5 == 0:
-            #denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
             clean_imgs = make_grid(clean_imgs.data, nrow=8, normalize=True, scale_each=True)
             noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
             denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
