@@ -60,18 +60,20 @@ def gen_noise(batch_size, noise_type):
     if noise_type == 'normal':
         noise_levels = np.linspace(0,55/255, batch_size[0])
         for i, nl in enumerate(noise_levels):
+            #noise_mask = np.random.uniform(size=noise[0].shape) < 0.5 
+            noise_mask = np.random.uniform(size=noise[0].shape) 
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).normal_(mean=0, std=nl)
 
     elif noise_type == 'uniform':
-        noise_levels = np.linspace(0,0.25, batch_size[0])
+        noise_levels = np.linspace(0,0.015, batch_size[0])
         for i, nl in enumerate(noise_levels):
             noise_mask = np.random.uniform(size=noise[0].shape) < nl 
             #noise_mask = np.random.uniform(size=noise[0,0].shape) < nl 
             #noise_mask = np.stack((noise_mask,noise_mask,noise_mask), axis=0)
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0) * noise_mask
 
-    elif noise_type == 's&p':
-        noise_levels = np.linspace(0,0.25, batch_size[0])
+    elif noise_type == 'pepper':
+        noise_levels = np.linspace(0,0.005, batch_size[0])
         for i, nl in enumerate(noise_levels):
 #            noise_salt = np.random.uniform(0.0,1.0, size=noise[0,0].shape)
 #            _, noise_salt = cv.threshold(noise_salt, (1-nl/2), 1.0, cv.THRESH_BINARY)
@@ -97,6 +99,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+    parser.add_argument('--lr_decay', type=float, default=0.85, help='learning rate decay')
     parser.add_argument('--num_layers', type=int, default=20, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
@@ -108,7 +111,7 @@ def main():
 
     # noise level for training, must be normalized like the clean image
     noise_level = args.noise_level/255
-    max_noise_level = 55/255
+    max_noise_level = 35/255
     noise_types = np.array(['normal', 'uniform', 'pepper'])
 
     # make sure data files exist
@@ -151,6 +154,7 @@ def main():
     # setup loss and optimizer
     criterion = torch.nn.MSELoss(reduction='sum').cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_decay)
 
     # data struct to track training and validation losses per epoch
     model_params = {'num_channels':num_channels, 'patch_size':patch_height, \
@@ -161,10 +165,13 @@ def main():
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
-    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
+    #scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
 
     # Main training loop
     best_val_loss = 999 
+    best_psnr_normal = 0
+    best_psnr_uniform = 0
+    best_psnr_pepper = 0
     for epoch in range(args.epochs):
         print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
         model.train()
@@ -268,7 +275,9 @@ def main():
         epoch_psnr_pepper /= num_pepper 
 
         # reduce learning rate if validation has leveled off
-        scheduler.step(epoch_val_loss)
+        #scheduler.step(epoch_val_loss)
+        # LR exponential decay
+        scheduler.step()
 
         # save epoch stats
         history['train'].append(epoch_train_loss)
@@ -288,9 +297,13 @@ def main():
         writer.add_scalar('PSNR-pepper', epoch_psnr_pepper, epoch)
 
         # save if best model
-        if epoch_val_loss < best_val_loss:
+        #if epoch_val_loss < best_val_loss:
+        if epoch_psnr_normal > best_psnr_normal:
             print('Saving best model')
             best_val_loss = epoch_val_loss
+            best_psnr_normal = epoch_psnr_normal
+            best_psnr_uniform = epoch_psnr_uniform
+            best_psnr_pepper = epoch_psnr_pepper
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
 
