@@ -10,7 +10,7 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 
 
 def main():
-    noise_types = np.array(['normal', 'uniform', 's&p'])
+    noise_types = np.array(['normal', 'uniform', 'pepper'])
 
     img_dir = 'data/train_color/test'
     imgs =  sorted(glob(os.path.join(img_dir, '*.png')))
