@@ -227,7 +227,7 @@ def main():
 
         # save if best model
         #if epoch_val_loss < best_val_loss:
-        if epoch_val_psnr < best_psnr:
+        if epoch_val_psnr > best_psnr:
             print('Saving best model')
             best_psnr = epoch_val_psnr
             #best_val_loss = epoch_val_loss
