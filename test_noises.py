@@ -16,20 +16,27 @@ def main():
     imgs =  sorted(glob(os.path.join(img_dir, '*.png')))
     assert len(imgs) > 0, f'No images found in {img_dir}'
     img = cv.imread(imgs[0])
-    #images = np.empty((len(imgs), img.shape[2], img.shape[0], img.shape[1]))
-    images = np.empty((len(imgs), img.shape[0], img.shape[1], img.shape[2]))
+    images = np.empty((len(imgs), img.shape[2], img.shape[0], img.shape[1]))
+    #images = np.empty((len(imgs), img.shape[0], img.shape[1], img.shape[2]))
     
     for i,img in enumerate(imgs):
         img = cv.imread(img)/255
-        #img = np.einsum('ijk->kij', img.astype(np.float32)) 
+        img = np.einsum('ijk->kij', img.astype(np.float32)) 
         images[i,:,:,:] = img 
 
     scales = [2,3,4]
     for scale in scales:
-        downsample_imgs = downsample(images, scale)
+        downsample_imgs, diff_imgs = downsample(images, scales)
 
         for i in range(downsample_imgs.shape[0]):
-            cv.imshow('downsampled', (downsample_imgs[i]*255).clip(0,255).astype('uint8'))
+            clean_img = np.einsum('ijk->jki', images[i].astype(np.float32)) 
+            cv.imshow('orig', (clean_img*255).clip(0,255).astype('uint8'))
+            down_img = np.einsum('ijk->jki', downsample_imgs[i].astype(np.float32)) 
+            cv.imshow('downsampled', (down_img*255).clip(0,255).astype('uint8'))
+            diff = np.einsum('ijk->jki', diff_imgs[i].astype(np.float32)) 
+            cv.imshow('diff', (diff*255).clip(0,255).astype('uint8'))
+            recon = down_img - diff 
+            cv.imshow('recons', (recon*255).clip(0,255).astype('uint8'))
             cv.waitKey(0)
         
 
