@@ -19,7 +19,7 @@ def main():
     images = np.empty((len(imgs), img.shape[2], img.shape[0], img.shape[1]))
     
     for i,img in enumerate(imgs):
-        img = cv.imread(img)/255
+        img = cv.imread(imgs[1])/255
         img = np.einsum('ijk->kij', img.astype(np.float32)) 
         images[i,:,:,:] = img 
 
@@ -40,6 +40,9 @@ def main():
             noisy = np.einsum('ijk->jki', noisy.astype(np.float32)) 
             cv.imshow('clean image', clean_img.clip(0,255).astype('uint8'))
             cv.imshow('noisy image', noisy_img.clip(0,255).astype('uint8'))
+            out_file = os.path.join('test_imgs', os.path.basename(imgs[i]).replace('.png', nt + str(i)+ '.png'))
+            print(f'saving file {out_file}')
+            cv.imwrite(out_file, noisy_img.clip(0,255).astype('uint8'))
             cv.imshow('noise image', noisy.clip(0,255).astype('uint8'))
             cv.waitKey(0)
 

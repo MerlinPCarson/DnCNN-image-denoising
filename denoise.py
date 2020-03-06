@@ -42,8 +42,10 @@ def main():
     noise_level = args.noise_level/255
     #max_noise_level = 35/255
     noise_sigma = [15,25,50]
-    noise_prob_uniform = [0.5, 1.0, 1.5]
-    noise_prob_pepper = [0.17, 0.34, 0.5]
+    #noise_prob_uniform = [0.5, 1.0, 1.5]
+    #noise_prob_pepper = [0.17, 0.34, 0.5]
+    noise_prob_uniform = [5.0, 10.0, 15.0]
+    noise_prob_pepper = [5.0, 10.0, 15.0]
     noise_levels = {'normal': noise_sigma, 'uniform': noise_prob_uniform, 'pepper': noise_prob_pepper}
     noise_types = np.array(['normal', 'uniform', 'pepper'])
 
@@ -93,7 +95,7 @@ def main():
                 #noisy_images = images + noise.data.numpy()
                 #noise = torch.FloatTensor(clean_img.size()).normal_(mean=0, std=noise_level)
                 noisy_img = Variable(noisy_img.cuda())
-                denoised_img = torch.clamp(noisy_img - model(noisy_img), 0.0, 1.0)
+                denoised_img = torch.clamp(model(noisy_img), 0.0, 1.0)
     
                 # save images
                 file_name = os.path.basename(f)

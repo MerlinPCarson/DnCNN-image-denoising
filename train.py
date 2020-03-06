@@ -47,8 +47,8 @@ def setup_gpus():
     return device_ids
 
 def psnr_of_batch(clean_imgs, denoised_imgs):
-    #clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
-    clean_imgs = clean_imgs.data.numpy().astype(np.float32)
+    clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
+    #clean_imgs = clean_imgs.data.numpy().astype(np.float32)
     denoised_imgs = denoised_imgs.data.cpu().numpy().astype(np.float32)
     batch_psnr = 0
     for i in range(clean_imgs.shape[0]):
@@ -65,7 +65,7 @@ def gen_noise(batch_size, noise_type):
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).normal_(mean=0, std=nl)
 
     elif noise_type == 'uniform':
-        noise_levels = np.linspace(0,0.015, batch_size[0])
+        noise_levels = np.linspace(0,0.15, batch_size[0])
         for i, nl in enumerate(noise_levels):
             noise_mask = np.random.uniform(size=noise[0].shape) < nl 
             #noise_mask = np.random.uniform(size=noise[0,0].shape) < nl 
@@ -73,7 +73,7 @@ def gen_noise(batch_size, noise_type):
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0) * noise_mask
 
     elif noise_type == 'pepper':
-        noise_levels = np.linspace(0,0.005, batch_size[0])
+        noise_levels = np.linspace(0,0.15, batch_size[0])
         for i, nl in enumerate(noise_levels):
 #            noise_salt = np.random.uniform(0.0,1.0, size=noise[0,0].shape)
 #            _, noise_salt = cv.threshold(noise_salt, (1-nl/2), 1.0, cv.THRESH_BINARY)
@@ -99,7 +99,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
-    parser.add_argument('--lr_decay', type=float, default=0.85, help='learning rate decay')
+    parser.add_argument('--lr_decay', type=float, default=0.90, help='learning rate decay')
     parser.add_argument('--num_layers', type=int, default=20, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
@@ -145,15 +145,21 @@ def main():
     print(f'Input shape to model forward will be: ({args.batch_size}, {num_channels}, {patch_height}, {patch_width})')
 
     # create model
-    model = DnCNN_Res(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
+    #model = DnCNN_Res(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
+    #              kernel_size=args.filter_size, stride=args.stride, num_filters=args.num_filters) 
+    model = DnCNN(num_channels=num_channels, patch_size=patch_height,  num_layers=args.num_layers, \
                   kernel_size=args.filter_size, stride=args.stride, num_filters=args.num_filters) 
 
     # move model to available gpus
     model = torch.nn.DataParallel(model, device_ids=device_ids).cuda()
 
+    print(model)
+    print(f'num parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
+
     # setup loss and optimizer
     criterion = torch.nn.MSELoss(reduction='sum').cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    #optimizer = torch.optim.Adadelta(model.parameters())
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_decay)
 
     # data struct to track training and validation losses per epoch
@@ -202,13 +208,14 @@ def main():
             # pack input and target it into torch variable
             #clean_imgs = Variable(data.cuda()) 
             noisy_imgs = Variable((clean_imgs + noise).cuda()) 
-            noise = Variable(noise.cuda())
+            clean_imgs = Variable(clean_imgs.cuda()) 
+            #noise = Variable(noise.cuda())
 
             # make predictions
-            preds = model(noisy_imgs)
+            preds = model(torch.clamp(noisy_imgs, 0.0, 1.0))
 
             # calculate loss
-            loss = criterion(preds, noise)/(2*noisy_imgs.size()[0])
+            loss = criterion(preds, clean_imgs)/(2*noisy_imgs.size()[0])
             epoch_train_loss += loss.detach()
 
             # backprop
@@ -243,17 +250,18 @@ def main():
                 # pack input and target it into torch variable
                 #clean_imgs = Variable(data.cuda()) 
                 noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
-                noise = Variable(noise.cuda())
+                clean_imgs = Variable(clean_imgs.cuda()) 
+                #noise = Variable(noise.cuda())
 
                 # make predictions
-                preds = model(noisy_imgs)
+                preds = model(torch.clamp(noisy_imgs, 0.0, 1.0))
 
                 # calculate loss
-                val_loss = criterion(preds, noise)/noisy_imgs.size()[0]
+                val_loss = criterion(preds, clean_imgs)/(2*noisy_imgs.size()[0])
                 epoch_val_loss += val_loss.detach()
 
                 # calculate PSNR 
-                denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
+                denoised_imgs = torch.clamp(preds, 0.0, 1.0)
                 if noise_type == 'normal':
                     epoch_psnr_normal += psnr_of_batch(clean_imgs, denoised_imgs)
                     num_normal += 1
@@ -314,10 +322,10 @@ def main():
                 writer.add_image('clean images', clean_pics, epoch)
                 for noise_type in noise_types:
                     noise = gen_noise(clean_imgs.size(), noise_type)
-                    noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
+                    noisy_imgs = Variable((clean_imgs + noise.cuda()).clamp(0.0,1.0))
                     preds = model(noisy_imgs)
-                    denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
-                    #noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
+                    #denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
+                    noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
                     denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
                     #writer.add_image(f'{noise_type} noisy images', noisy_imgs, epoch)
                     writer.add_image(f'{noise_type} denoised images', denoised_imgs, epoch)
