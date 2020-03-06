@@ -14,6 +14,7 @@ from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from torchvision.utils import make_grid
 from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
 import cv2 as cv
 
 
@@ -54,6 +55,17 @@ def psnr_of_batch(clean_imgs, denoised_imgs):
     for i in range(clean_imgs.shape[0]):
         batch_psnr += psnr(clean_imgs[i,:,:,:], denoised_imgs[i,:,:,:], data_range=1)
     return batch_psnr/clean_imgs.shape[0]
+
+def ssim_of_batch(clean_imgs, denoised_imgs):
+    #clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
+    clean_imgs = clean_imgs.data.numpy().astype(np.float32)
+    clean_imgs = np.einsum('ijkl->iklj', clean_imgs.astype(np.float32)) 
+    denoised_imgs = denoised_imgs.data.cpu().numpy().astype(np.float32)
+    denoised_imgs = np.einsum('ijkl->iklj', denoised_imgs.astype(np.float32)) 
+    batch_ssim = 0
+    for i in range(clean_imgs.shape[0]):
+        batch_ssim += ssim(clean_imgs[i,:,:,:], denoised_imgs[i,:,:,:], multichannel=True, data_range=1)
+    return batch_ssim/clean_imgs.shape[0]
 
 def gen_noise(batch_size, noise_type):
     noise = torch.zeros(batch_size)
@@ -179,7 +191,7 @@ def main():
                     'num_layers':args.num_layers, 'kernel_size':args.filter_size,\
                     'stride':args.stride, 'num_filters':args.num_filters}
 #    history = {'model': model_params, 'train':[], 'val':[], 'psnr':{'normal':[], 'uniform':[],'pepper':[]}}
-    history = {'model': model_params, 'train':[], 'val':[], 'psnr':[]}
+    history = {'model': model_params, 'train':[], 'val':[], 'psnr':[], 'ssim':[]}
     pickle.dump(history, open(os.path.join(args.log_dir, 'model.npy'), 'wb'))
     writer = SummaryWriter(args.log_dir)
 
@@ -193,9 +205,10 @@ def main():
     best_psnr_uniform = 0
     best_psnr_pepper = 0
     best_psnr = 0
+    best_ssim = 0
     epoch = 0
 #    for epoch in range(args.epochs):
-    while epoch < args.epochs:
+    for epoch in range(args.epochs):
         print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
         model.train()
         # iterate through batches of training examples
@@ -255,6 +268,7 @@ def main():
         num_pepper = 0
         val_steps = 0
         epoch_psnr = 0
+        epoch_ssim = 0
         #model.zero_grad()
         with torch.no_grad():
             for clean_imgs in tqdm(val_loader):
@@ -283,6 +297,7 @@ def main():
                 # calculate PSNR 
                 denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
                 epoch_psnr += psnr_of_batch(clean_imgs, denoised_imgs)
+                epoch_ssim += ssim_of_batch(clean_imgs, denoised_imgs)
 #                if noise_type == 'normal':
 #                    epoch_psnr_normal += psnr_of_batch(clean_imgs, denoised_imgs)
 #                    num_normal += 1
@@ -300,6 +315,7 @@ def main():
         epoch_train_loss /= train_steps
         epoch_val_loss /= val_steps
         epoch_psnr /= val_steps
+        epoch_ssim /= val_steps
 #        epoch_psnr_normal /= num_normal 
 #        epoch_psnr_uniform /= num_uniform 
 #        epoch_psnr_pepper /= num_pepper 
@@ -324,18 +340,21 @@ def main():
         history['train'].append(epoch_train_loss)
         history['val'].append(epoch_val_loss)
         history['psnr'].append(epoch_psnr)
+        history['ssim'].append(epoch_ssim)
 #        history['psnr']['normal'].append(epoch_psnr_normal)
 #        history['psnr']['uniform'].append(epoch_psnr_uniform)
 #        history['psnr']['pepper'].append(epoch_psnr_pepper)
         print(f'Training loss: {epoch_train_loss}')
         print(f'Validation loss: {epoch_val_loss}')
-        print(f'Validation PSNR-uniform: {epoch_psnr}')
+        print(f'Validation PSNR: {epoch_psnr}')
+        print(f'Validation SSIM: {epoch_ssim}')
 #        print(f'Validation PSNR-uniform: {epoch_psnr_uniform}')
 #        print(f'Validation PSNR-normal: {epoch_psnr_normal}')
 #        print(f'Validation PSNR-pepper: {epoch_psnr_pepper}')
         writer.add_scalar('loss', epoch_train_loss, epoch)
         writer.add_scalar('val', epoch_val_loss, epoch)
         writer.add_scalar('PSNR', epoch_psnr, epoch)
+        writer.add_scalar('SSIM', epoch_ssim, epoch)
 #        writer.add_scalar('PSNR-normal', epoch_psnr_normal, epoch)
 #        writer.add_scalar('PSNR-uniform', epoch_psnr_uniform, epoch)
 #        writer.add_scalar('PSNR-pepper', epoch_psnr_pepper, epoch)
@@ -357,7 +376,11 @@ def main():
             with torch.no_grad():
                 clean_pics = make_grid(clean_imgs, nrow=8, normalize=True, scale_each=True)
                 writer.add_image('clean images', clean_pics, epoch)
-                for noise_type in noise_types:
+                denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
+                writer.add_image(f'denoised images', denoised_imgs, epoch)
+                pred_noise = make_grid(torch.clamp(preds, 0.0, 1.0).data, nrow=8, normalize=True, scale_each=True)
+                writer.add_image(f'predicted noise images', pred_noise, epoch)
+                #for noise_type in noise_types:
                     #noise = gen_noise(clean_imgs.size(), noise_type)
                     #noisy_imgs, noise = downsample(clean_imgs, scales)
                     #noisy_imgs = Variable(torch.FloatTensor(noisy_imgs).cuda())
@@ -365,9 +388,7 @@ def main():
                     #preds = model(torch.clamp(noisy_imgs, 0.0, 1.0))
                     #denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
                     #noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
-                    denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
                     #writer.add_image(f'{noise_type} noisy images', noisy_imgs, epoch)
-                    writer.add_image(f'{noise_type} denoised images', denoised_imgs, epoch)
 
     # saving final model
     print('Saving final model')
