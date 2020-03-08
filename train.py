@@ -139,6 +139,7 @@ def main():
     max_noise_level = 55/255
     #noise_types = np.array(['normal', 'uniform', 'pepper'])
     noise_types = np.array(['normal','pepper'])
+    train_type = ['noise', 'downsample']
 
     scales = [2,3,4]
 
@@ -224,11 +225,13 @@ def main():
 
             # Model-B
 
-            #noise_type = np.random.choice(noise_types)
-            #noise = gen_noise(clean_imgs.size(), noise_type)
-            #noisy_imgs = clean_imgs + noise
+            train_on = np.random.choice(train_type)
+            if train_on == 'noise':
+                noise = gen_noise(clean_imgs.size(), 'normal')
+                noisy_imgs = clean_imgs + noise
+            else:
+                noisy_imgs, noise = downsample(clean_imgs.data.numpy(), scales)
 
-            noisy_imgs, noise = downsample(clean_imgs.data.numpy(), scales)
 #            if noise_type == 'normal':
 #                for i, nl in enumerate(noise_levels):
 #                    noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).normal_(mean=0, std=nl)
@@ -280,7 +283,13 @@ def main():
                 #noise_type = np.random.choice(noise_types)
                 #noise = gen_noise(clean_imgs.size(), noise_type)
 
-                noisy_imgs, noise = downsample(clean_imgs.data.numpy(), scales)
+                #noisy_imgs, noise = downsample(clean_imgs.data.numpy(), scales)
+                val_on = np.random.choice(train_type)
+                if val_on == 'noise':
+                    noise = gen_noise(clean_imgs.size(), 'normal')
+                    noisy_imgs = clean_imgs + noise
+                else:
+                    noisy_imgs, noise = downsample(clean_imgs.data.numpy(), scales)
 
                 # pack input and target it into torch variable
                 #clean_imgs = Variable(data.cuda()) 

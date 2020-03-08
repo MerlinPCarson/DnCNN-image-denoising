@@ -4,6 +4,8 @@ import sys
 import cv2 as cv
 import torch
 from glob import glob
+from gen_data import image_augment
+from gen_data import augment_img
 
 from train import gen_noise, downsample
 from skimage.metrics import peak_signal_noise_ratio as psnr
@@ -19,6 +21,32 @@ def main():
     images = np.empty((len(imgs), img.shape[2], img.shape[0], img.shape[1]))
     #images = np.empty((len(imgs), img.shape[0], img.shape[1], img.shape[2]))
     
+    aug_types = np.array([1.0, .9, .8, .7])
+    for i, imgF in enumerate(imgs):
+        img = cv.imread(imgF)/255
+        cv.imshow('original', (img*255).clip(0,255).astype('uint8'))
+        for aug in aug_types:
+            img_aug = cv.resize(img, (int(img.shape[1]*aug), int(img.shape[0]*aug)), interpolation=cv.INTER_CUBIC)
+            cv.imshow(f'scale factor {aug}', (img_aug*255).clip(0,255).astype('uint8'))
+            out_path = os.path.join('augs', os.path.basename(imgF).replace('.png', f'-{aug}.png')) 
+            cv.imwrite(out_path, (img_aug*255).clip(0,255).astype('uint8'))
+        cv.waitKey(0)
+
+    aug_types = np.array(['mirror', 'flip', 'rotL', 'rotR'])
+    for i, imgF in enumerate(imgs):
+        img = cv.imread(imgF)/255
+        cv.imshow('original', (img*255).clip(0,255).astype('uint8'))
+        for aug in aug_types:
+            img_aug = augment_img(img, aug)
+            cv.imshow(aug, (img_aug*255).clip(0,255).astype('uint8'))
+            #out_path = os.path.join('augs', os.path.basename(imgF).replace('.png', f'-{aug}.png')) 
+            #cv.imwrite(out_path, (img_aug*255).clip(0,255).astype('uint8'))
+        cv.waitKey(0)
+
+    for i,img in enumerate(imgs):
+        img = cv.imread(img)/255
+
+
     for i,img in enumerate(imgs):
         img = cv.imread(img)/255
         img = np.einsum('ijk->kij', img.astype(np.float32)) 
