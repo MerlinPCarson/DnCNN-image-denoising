@@ -41,7 +41,7 @@ class Dataset(torch.utils.data.Dataset):
 def setup_gpus():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     device_ids = [i for i in range(torch.cuda.device_count())]
-    device_ids = device_ids[:-1]
+    #device_ids = device_ids[:-1]
     print(device_ids)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, device_ids))
     return device_ids
@@ -65,12 +65,12 @@ def gen_noise(batch_size, noise_type):
     elif noise_type == 'uniform':
         noise_levels = np.linspace(0,0.25, batch_size[0])
         for i, nl in enumerate(noise_levels):
-            noise_mask = np.random.uniform(size=noise[0].shape) < nl 
+            noise_mask = torch.FloatTensor(np.random.uniform(size=noise[0].shape) < nl )
             #noise_mask = np.random.uniform(size=noise[0,0].shape) < nl 
             #noise_mask = np.stack((noise_mask,noise_mask,noise_mask), axis=0)
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0) * noise_mask
 
-    elif noise_type == 's&p':
+    elif noise_type == 'pepper':
         noise_levels = np.linspace(0,0.25, batch_size[0])
         for i, nl in enumerate(noise_levels):
 #            noise_salt = np.random.uniform(0.0,1.0, size=noise[0,0].shape)
@@ -97,6 +97,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=80, help='number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
+    parser.add_argument('--lr_decay', type=float, default=0.94, help='learning rate decay factor')
     parser.add_argument('--num_layers', type=int, default=20, help='number of CNN layers in network')
     parser.add_argument('--num_filters', type=int, default=64, help='number of filters per CNN layer')
     parser.add_argument('--filter_size', type=int, default=3, help='size of filter for CNN layers')
@@ -110,6 +111,8 @@ def main():
     noise_level = args.noise_level/255
     max_noise_level = 55/255
     noise_types = np.array(['normal', 'uniform', 'pepper'])
+    #noise_types = np.array(['normal','uniform'])
+    #noise_types = np.array(['uniform'])
 
     # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
@@ -161,10 +164,13 @@ def main():
     writer = SummaryWriter(args.log_dir)
 
     # schedulers
-    scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
+    #scheduler = ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=10)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_decay)
 
     # Main training loop
     best_val_loss = 999 
+    best_psnr_normal = 0
+    best_psnr_uniform = 0
     for epoch in range(args.epochs):
         print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
         model.train()
@@ -198,7 +204,7 @@ def main():
             noise = Variable(noise.cuda())
 
             # make predictions
-            preds = model(noisy_imgs)
+            preds = model(torch.clamp(noisy_imgs, 0.0, 1.0))
 
             # calculate loss
             loss = criterion(preds, noise)/(2*noisy_imgs.size()[0])
@@ -239,10 +245,10 @@ def main():
                 noise = Variable(noise.cuda())
 
                 # make predictions
-                preds = model(noisy_imgs)
+                preds = model(torch.clamp(noisy_imgs, 0.0, 1.0))
 
                 # calculate loss
-                val_loss = criterion(preds, noise)/noisy_imgs.size()[0]
+                val_loss = criterion(preds, noise)/(2*noisy_imgs.size()[0])
                 epoch_val_loss += val_loss.detach()
 
                 # calculate PSNR 
@@ -263,12 +269,17 @@ def main():
         # epoch summary
         epoch_train_loss /= train_steps
         epoch_val_loss /= val_steps
-        epoch_psnr_normal /= num_normal 
-        epoch_psnr_uniform /= num_uniform 
-        epoch_psnr_pepper /= num_pepper 
+        if num_normal > 0:
+            epoch_psnr_normal /= num_normal 
+        if num_uniform > 0:
+            epoch_psnr_uniform /= num_uniform 
+        if num_pepper > 0:
+            epoch_psnr_pepper /= num_pepper 
 
         # reduce learning rate if validation has leveled off
-        scheduler.step(epoch_val_loss)
+        #scheduler.step(epoch_val_loss)
+        # exponential decay of learning rate
+        scheduler.step()
 
         # save epoch stats
         history['train'].append(epoch_train_loss)
@@ -290,6 +301,9 @@ def main():
         # save if best model
         if epoch_val_loss < best_val_loss:
             print('Saving best model')
+            #best_psnr_normal = epoch_psnr_normal
+            #best_psnr_uniform = epoch_psnr_uniform
+            #best_psnr_pepper = epoch_psnr_pepper
             best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))

@@ -27,7 +27,7 @@ def main():
     images = torch.FloatTensor(images)
     for nt in noise_types:
         noise = gen_noise(images.size(), nt)
-        noisy_images = images + noise.data.numpy()
+        noisy_images = images + noise
 
         for i in range(images.size()[0]):
             psnr_val = psnr(images[i].data.numpy().astype(np.float32), noisy_images[i].data.numpy().astype(np.float32), data_range=1)
