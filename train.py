@@ -41,7 +41,7 @@ class Dataset(torch.utils.data.Dataset):
 def setup_gpus():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     device_ids = [i for i in range(torch.cuda.device_count())]
-    #device_ids = device_ids[:-1]
+    device_ids = device_ids[:-1]
     print(device_ids)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, device_ids))
     return device_ids
@@ -110,9 +110,9 @@ def main():
     # noise level for training, must be normalized like the clean image
     noise_level = args.noise_level/255
     max_noise_level = 55/255
-    noise_types = np.array(['normal', 'uniform', 'pepper'])
+    #noise_types = np.array(['normal', 'uniform', 'pepper'])
     #noise_types = np.array(['normal','uniform'])
-    #noise_types = np.array(['pepper'])
+    noise_types = np.array(['pepper'])
 
     # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
@@ -171,6 +171,7 @@ def main():
     best_val_loss = 999 
     best_psnr_normal = 0
     best_psnr_uniform = 0
+    best_psnr_pepper = 0
     for epoch in range(args.epochs):
         print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
         model.train()
@@ -245,7 +246,7 @@ def main():
                 noise = Variable(noise.cuda())
 
                 # make predictions
-                preds = model(torch.clamp(noisy_imgs, 0.0, 1.0))
+                preds = model(torch.clamp(noisy_imgs,0.0,1.0))
 
                 # calculate loss
                 val_loss = criterion(preds, noise)/(2*noisy_imgs.size()[0])
@@ -299,12 +300,12 @@ def main():
         writer.add_scalar('PSNR-pepper', epoch_psnr_pepper, epoch)
 
         # save if best model
-        if epoch_val_loss < best_val_loss:
+        if epoch_psnr_pepper > best_psnr_pepper:
             print('Saving best model')
             #best_psnr_normal = epoch_psnr_normal
             #best_psnr_uniform = epoch_psnr_uniform
-            #best_psnr_pepper = epoch_psnr_pepper
-            best_val_loss = epoch_val_loss
+            best_psnr_pepper = epoch_psnr_pepper
+            #best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
 
@@ -314,10 +315,10 @@ def main():
                 clean_pics = make_grid(clean_imgs, nrow=8, normalize=True, scale_each=True)
                 writer.add_image('clean images', clean_pics, epoch)
                 for noise_type in noise_types:
-                    noise = gen_noise(clean_imgs.size(), noise_type)
-                    noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
-                    preds = model(noisy_imgs)
-                    denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
+                    #noise = gen_noise(clean_imgs.size(), noise_type)
+                    #noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
+                    #preds = model(noisy_imgs)
+                    #denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
                     #noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
                     denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
                     #writer.add_image(f'{noise_type} noisy images', noisy_imgs, epoch)
