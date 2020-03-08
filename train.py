@@ -112,7 +112,7 @@ def main():
     max_noise_level = 55/255
     noise_types = np.array(['normal', 'uniform', 'pepper'])
     #noise_types = np.array(['normal','uniform'])
-    #noise_types = np.array(['uniform'])
+    #noise_types = np.array(['pepper'])
 
     # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
@@ -241,7 +241,7 @@ def main():
 
                 # pack input and target it into torch variable
                 #clean_imgs = Variable(data.cuda()) 
-                noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
+                noisy_imgs = Variable((clean_imgs + noise).cuda())
                 noise = Variable(noise.cuda())
 
                 # make predictions
