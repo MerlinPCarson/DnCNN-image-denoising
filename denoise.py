@@ -17,12 +17,15 @@ def main():
     parser.add_argument('--img_dir', type=str, default='data/train_color/test', help='location of files to denoise')
     parser.add_argument('--out_dir', type=str, default='output', help='location to save output images')
     parser.add_argument('--img', type=str, help='location of a file to denoise')
-    parser.add_argument('--noise_level', type=float, default=25.0, help='noise level for training')
+    parser.add_argument('--noise_levels', type=str, default='15,25,50', help='noise level for training')
     parser.add_argument('--model_name', type=str, default='logs/best_model.pt', help='location of model file')
     args = parser.parse_args()
 
     # normalize noise level
-    noise_level = args.noise_level/255
+    #noise_level = args.noise_level/255
+    noise_levels = [float(nl)/255 for nl in args.noise_levels.split(',')] 
+
+    print(f'Using noise levels {noise_levels}')
 
     assert os.path.exists(args.img_dir), f'Image directory {args.img_dir} not found'
     assert os.path.exists(args.model_name), f'Model {args.model_name} not found'
@@ -44,47 +47,50 @@ def main():
     # make sure output directory exists
     os.makedirs(out_dir, exist_ok=True)
 
-    test_psnr = 0
-    psnr_improvement = 0
-    num_test_files = 0
-    for f in sorted(glob(os.path.join(args.img_dir, '*.png'))):
-        print(f'Denoising {f}')
+    for nl in noise_levels:
+      test_psnr = 0
+      psnr_improvement = 0
+      num_test_files = 0
+      print(f'loading files from {args.img_dir}')
+      for f in sorted(glob(os.path.join(args.img_dir, '*.jpg'))):
+          print(f'Denoising {f} with noise level {nl}')
 
-        img = cv.imread(f).astype(np.float32)[:,:,:num_channels]
-        clean_img = np.einsum('ijk->kij', img.astype(np.float32)/255) 
-        clean_img = np.expand_dims(clean_img, axis=0)
-        clean_img = torch.FloatTensor(clean_img)
+          img = cv.imread(f).astype(np.float32)[:,:,:num_channels]
+          clean_img = np.einsum('ijk->kij', img.astype(np.float32)/255) 
+          clean_img = np.expand_dims(clean_img, axis=0)
+          clean_img = torch.FloatTensor(clean_img)
 
-        # prepare noisy image
-        noise = torch.FloatTensor(clean_img.size()).normal_(mean=0, std=noise_level)
-        noisy_img = Variable((clean_img + noise).cuda())
+          # prepare noisy image
+          noise = torch.FloatTensor(clean_img.size()).normal_(mean=0, std=nl)
+          #noisy_img = Variable((clean_img + noise).cuda())
+          noisy_img = Variable(clean_img.cuda())
 
-        with torch.no_grad():
-            denoised_img = torch.clamp(noisy_img - model(noisy_img), 0.0, 1.0)
-            
-        # save images
-        file_name = os.path.basename(f)
-        denoised_img = denoised_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
-        denoised_img *= 255     # undo normalization
-        denoised_img = np.einsum('ijk->jki', denoised_img)
-        cv.imwrite(img=denoised_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(out_dir, file_name.replace('.png', '-denoised.png')))
+          with torch.no_grad():
+              denoised_img = torch.clamp(noisy_img - model(noisy_img), 0.0, 1.0)
+              
+          # save images
+          file_name = os.path.basename(f)
+          denoised_img = denoised_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
+          denoised_img *= 255     # undo normalization
+          denoised_img = np.einsum('ijk->jki', denoised_img)
+          cv.imwrite(img=denoised_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(out_dir, file_name.replace('.jpg', f'-{str(nl*255)}-denoised.png')))
 
-        noisy_img = noisy_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
-        noisy_img *= 255        # undo normalization
-        noisy_img = np.einsum('ijk->jki', noisy_img) 
-        cv.imwrite(img=noisy_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(out_dir, file_name.replace('.png', '-noisy.png')))
+          noisy_img = noisy_img.cpu().data.numpy().astype(np.float32)[0,:,:,:]
+          noisy_img *= 255        # undo normalization
+          noisy_img = np.einsum('ijk->jki', noisy_img) 
+          cv.imwrite(img=noisy_img.clip(0.0, 255.0).astype('uint8'), filename=os.path.join(out_dir, file_name.replace('.jpg', f'-{str(nl*255)}-noisy.png')))
 
-        psnr_pre = psnr(img, noisy_img, data_range=255)
-        psnr_post = psnr(img, denoised_img, data_range=255)
-        psnr_diff = psnr_post-psnr_pre
-        print(f'PNSR of {f}: {psnr_post}, increase of {psnr_diff}')
+          psnr_pre = psnr(img, noisy_img, data_range=255)
+          psnr_post = psnr(img, denoised_img, data_range=255)
+          psnr_diff = psnr_post-psnr_pre
+          print(f'PNSR of {f}: {psnr_post}, increase of {psnr_diff}')
 
-        psnr_improvement += psnr_diff
-        test_psnr += psnr_post
-        num_test_files += 1
+          psnr_improvement += psnr_diff
+          test_psnr += psnr_post
+          num_test_files += 1
 
-    print(f'Average PSNR of testset is {test_psnr/num_test_files}')
-    print(f'Average increase in PSNR of testset is {psnr_improvement/num_test_files}')
+      print(f'Average PSNR of testset at noise level {nl} is {test_psnr/num_test_files}')
+      print(f'Average increase in PSNR of testset at noise level {nl} is {psnr_improvement/num_test_files}')
 
     return 0
 
