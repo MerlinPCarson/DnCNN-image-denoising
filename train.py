@@ -300,12 +300,13 @@ def main():
         writer.add_scalar('PSNR-pepper', epoch_psnr_pepper, epoch)
 
         # save if best model
-        if epoch_psnr_pepper > best_psnr_pepper:
+        #if epoch_psnr_pepper > best_psnr_pepper and np.isinf(epoch_psnr_pepper) == False:
+        if epoch_val_loss < best_val_loss:
             print('Saving best model')
             #best_psnr_normal = epoch_psnr_normal
             #best_psnr_uniform = epoch_psnr_uniform
-            best_psnr_pepper = epoch_psnr_pepper
-            #best_val_loss = epoch_val_loss
+            #best_psnr_pepper = epoch_psnr_pepper
+            best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
 
