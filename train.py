@@ -47,7 +47,6 @@ def setup_gpus():
     return device_ids
 
 def psnr_of_batch(clean_imgs, denoised_imgs):
-    #clean_imgs = clean_imgs.data.cpu().numpy().astype(np.float32)
     clean_imgs = clean_imgs.data.numpy().astype(np.float32)
     denoised_imgs = denoised_imgs.data.cpu().numpy().astype(np.float32)
     batch_psnr = 0
@@ -66,26 +65,15 @@ def gen_noise(batch_size, noise_type):
         noise_levels = np.linspace(0,0.25, batch_size[0])
         for i, nl in enumerate(noise_levels):
             noise_mask = torch.FloatTensor(np.random.uniform(size=noise[0].shape) < nl )
-            #noise_mask = np.random.uniform(size=noise[0,0].shape) < nl 
-            #noise_mask = np.stack((noise_mask,noise_mask,noise_mask), axis=0)
             noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0) * noise_mask
 
     elif noise_type == 'pepper':
         noise_levels = np.linspace(0,0.25, batch_size[0])
         for i, nl in enumerate(noise_levels):
-#            noise_salt = np.random.uniform(0.0,1.0, size=noise[0,0].shape)
-#            _, noise_salt = cv.threshold(noise_salt, (1-nl/2), 1.0, cv.THRESH_BINARY)
             noise_pepper = np.random.uniform(0.0,1.0, size=noise[0,0].shape)
             _, noise_pepper = cv.threshold(noise_pepper, (1-nl), -1.0, cv.THRESH_BINARY)
-#            salt_pepper = noise_salt + noise_pepper
 
-            #noise_salt = np.stack((noise_salt,noise_salt,noise_salt), axis=0)
-            #pepper_mask = np.random.uniform(size=noise_salt[0].shape) < 0.5 
-            #pepper_mask = np.stack((pepper_mask,pepper_mask,pepper_mask), axis=0)
-            #salt_pepper = noise_salt * pepper_mask
             noise[i,:,:,:] = torch.FloatTensor(noise_pepper)
-            #torch.FloatTensor(noise[0,:,:,:].shape).uniform_(0.0,1.0)
-            #_, noise[i,:,:,:] = cv.threshold(noise, (1-nl),1.0, cv.THRESH_BINARY)
 
     return noise
 
@@ -111,8 +99,7 @@ def main():
     noise_level = args.noise_level/255
     max_noise_level = 55/255
     #noise_types = np.array(['normal', 'uniform', 'pepper'])
-    #noise_types = np.array(['normal','uniform'])
-    noise_types = np.array(['pepper'])
+    noise_types = np.array(['normal'])
 
     # make sure data files exist
     assert os.path.exists(args.train_set), f'Cannot find training vectors file {args.train_set}'
@@ -174,11 +161,12 @@ def main():
     best_psnr_pepper = 0
     for epoch in range(args.epochs):
         print(f'Starting epoch {epoch+1} with learning rate {optimizer.param_groups[0]["lr"]}')
+
         model.train()
-        # iterate through batches of training examples
         epoch_train_loss = 0
         train_steps = 0
 
+        # iterate through batches of training examples
         for clean_imgs in tqdm(train_loader):
             model.zero_grad()
 
@@ -190,17 +178,8 @@ def main():
 
             noise_type = np.random.choice(noise_types)
             noise = gen_noise(clean_imgs.size(), noise_type)
-#            if noise_type == 'normal':
-#                for i, nl in enumerate(noise_levels):
-#                    noise[i,:,:,:] = torch.FloatTensor(noise[0,:,:,:].shape).normal_(mean=0, std=nl)
-#
-#            if noise_type == 'uniform':
-#                for i, nl in enumerate(noise_levels):
-#                    noise[i,:,:,:] = torch.FloatTensor(noise[0].shape).normal_(mean=0, std=nl)
-
 
             # pack input and target it into torch variable
-            #clean_imgs = Variable(data.cuda()) 
             noisy_imgs = Variable((clean_imgs + noise).cuda()) 
             noise = Variable(noise.cuda())
 
@@ -228,7 +207,6 @@ def main():
         epoch_psnr_pepper = 0
         num_pepper = 0
         val_steps = 0
-        #model.zero_grad()
         with torch.no_grad():
             for clean_imgs in tqdm(val_loader):
                 # generate additive white noise from gaussian distribution
@@ -241,7 +219,6 @@ def main():
 
 
                 # pack input and target it into torch variable
-                #clean_imgs = Variable(data.cuda()) 
                 noisy_imgs = Variable((clean_imgs + noise).cuda())
                 noise = Variable(noise.cuda())
 
@@ -279,6 +256,7 @@ def main():
 
         # reduce learning rate if validation has leveled off
         #scheduler.step(epoch_val_loss)
+
         # exponential decay of learning rate
         scheduler.step()
 
@@ -300,12 +278,8 @@ def main():
         writer.add_scalar('PSNR-pepper', epoch_psnr_pepper, epoch)
 
         # save if best model
-        #if epoch_psnr_pepper > best_psnr_pepper and np.isinf(epoch_psnr_pepper) == False:
         if epoch_val_loss < best_val_loss:
             print('Saving best model')
-            #best_psnr_normal = epoch_psnr_normal
-            #best_psnr_uniform = epoch_psnr_uniform
-            #best_psnr_pepper = epoch_psnr_pepper
             best_val_loss = epoch_val_loss
             torch.save(model, os.path.join(args.log_dir, 'best_model.pt'))
             pickle.dump(history, open(os.path.join(args.log_dir, 'best_model.npy'), 'wb'))
@@ -316,13 +290,7 @@ def main():
                 clean_pics = make_grid(clean_imgs, nrow=8, normalize=True, scale_each=True)
                 writer.add_image('clean images', clean_pics, epoch)
                 for noise_type in noise_types:
-                    #noise = gen_noise(clean_imgs.size(), noise_type)
-                    #noisy_imgs = Variable((clean_imgs + noise).cuda()).clamp(0.0,1.0)
-                    #preds = model(noisy_imgs)
-                    #denoised_imgs = torch.clamp(noisy_imgs-preds, 0.0, 1.0)
-                    #noisy_imgs = make_grid(noisy_imgs.data, nrow=8, normalize=True, scale_each=True)
                     denoised_imgs = make_grid(denoised_imgs.data, nrow=8, normalize=True, scale_each=True)
-                    #writer.add_image(f'{noise_type} noisy images', noisy_imgs, epoch)
                     writer.add_image(f'{noise_type} denoised images', denoised_imgs, epoch)
 
     # saving final model
@@ -334,3 +302,4 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+

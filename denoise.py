@@ -12,7 +12,6 @@ from skimage.metrics import peak_signal_noise_ratio as psnr
 
 def add_noise(img, noise_type, noise_level):
     if noise_type == 'normal':
-        #noise_mask = np.random.uniform(size=img.size()) 
         noise = torch.FloatTensor(img.size()).normal_(mean=0, std=noise_level/255)
 
     elif noise_type == 'uniform':
@@ -40,13 +39,12 @@ def main():
 
     # normalize noise level
     noise_level = args.noise_level/255
-    #max_noise_level = 35/255
-    noise_sigma = [15,25,50]
-    noise_prob_uniform = [0.5, 1.0, 1.5]
-    noise_prob_pepper = [5, 10, 15]
+    noise_sigma = [15,25,50]            # standard deviation
+    noise_prob_uniform = [5, 10, 15]    # percent of pixels corrupted
+    noise_prob_pepper = [5, 10, 15]     # percent of pixels corrupted
     noise_levels = {'normal': noise_sigma, 'uniform': noise_prob_uniform, 'pepper': noise_prob_pepper}
     #noise_types = np.array(['normal', 'uniform', 'pepper'])
-    noise_types = np.array(['pepper'])
+    noise_types = np.array(['normal'])
 
     assert os.path.exists(args.img_dir), f'Image directory {args.img_dir} not found'
     assert os.path.exists(args.model_name), f'Model {args.model_name} not found'
@@ -58,16 +56,15 @@ def main():
     # load model params
     model_history = pickle.load(open(args.model_name.replace('.pt', '.npy'), 'rb'))
     num_channels = model_history['model']['num_channels']
-    #num_channels = 3
+
     # load model 
     model = torch.load(args.model_name)
     model.eval() 
 
     model_dir = os.path.dirname(args.model_name)
     out_dir = os.path.join(model_dir, args.out_dir)
-    # make sure output directory exists
-    os.makedirs(out_dir, exist_ok=True)
 
+    os.makedirs(out_dir, exist_ok=True)
 
     psnrs = dict.fromkeys(noise_types, None)
     for key in psnrs.keys():
@@ -82,8 +79,6 @@ def main():
             psnr_improvement = 0
             num_test_files = 0
             for f in sorted(glob(os.path.join(args.img_dir, '*.png'))):
-                #clean_img = np.einsum('ijk->kij', img.astype(np.float32)/255) 
-                    #clean_img = np.expand_dims(clean_img, axis=0)
                 img = cv.imread(f).astype(np.float32)[:,:,:num_channels]
                 clean_img = np.einsum('ijk->kij', img.astype(np.float32)/255) 
                 clean_img = np.expand_dims(clean_img, axis=0)
@@ -91,8 +86,6 @@ def main():
     
                 # prepare noisy image
                 noisy_img = add_noise(clean_img, noise_type, noise_levels[noise_type][i])
-                #noisy_images = images + noise.data.numpy()
-                #noise = torch.FloatTensor(clean_img.size()).normal_(mean=0, std=noise_level)
                 noisy_img = Variable(noisy_img.cuda())
                 denoised_img = noisy_img - model(torch.clamp(noisy_img,0.0,1.0))
     
@@ -119,10 +112,6 @@ def main():
 
             psnrs[noise_type][noise_level] = [test_psnr/num_test_files, psnr_improvement/num_test_files]    
 
-            #print(f'[{noise_type}:{noise_level}] Average PSNR of testset is {test_psnr/num_test_files}')
-            #print(f'[{noise_type}:{noise_level}] Average increase in PSNR of testset is {psnr_improvement/num_test_files}')
-
-    print(psnrs)
     for noise_type in noise_types:
         print(f'[{noise_type}]')
         for i in range(len(noise_sigma)):
